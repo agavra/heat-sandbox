@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Why S3 Can Be Multi-Tenant And You Probably Can't</title>
+<title>Why S3 Can Be Multi-Tenant And You (Probably) Can't</title>
 <style>
   :root{
     --bg:#f8f8f4; --bg2:#efefe7; --panel:#fcfcf7; --line:#e0e0d4; --line2:#cacaba;
@@ -24,9 +24,6 @@
   .inner{max-width:1000px;margin:0 auto;padding:0 18px}
   .head{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
   .head .ttl{font-size:19px;font-weight:650;color:var(--text);letter-spacing:.01em}
-  .cmd{margin-top:9px;font-size:12.5px;color:var(--text);white-space:nowrap;
-    overflow-x:auto;-webkit-overflow-scrolling:touch}
-  .cmd .p{color:var(--green)} .cmd .f{color:var(--purple)} .cmd .vv{color:var(--accent)}
   /* (?) description tooltip */
   .help{position:relative;flex:0 0 auto;width:17px;height:17px;border:1px solid var(--line2);
     border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
@@ -40,7 +37,7 @@
   .help:hover .tip,.help:focus .tip{display:block}
 
   /* ---- blog-style centered column ---- */
-  .page{max-width:1000px;margin:0 auto;padding:18px}
+  .page{max-width:1000px;margin:0 auto;padding:30px 18px 18px}
 
   /* ---- parameters bar (on top) ---- */
   .ctlgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 20px;align-items:start}
@@ -72,7 +69,8 @@
   /* ---- real-world preset buttons ---- */
   .presets{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
   .preset{text-align:left;background:var(--bg2);border:1px solid var(--line2);padding:8px 10px;
-    cursor:pointer;font:inherit;color:var(--text)}
+    cursor:pointer;font:inherit;color:var(--text);
+    display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start}
   .preset:hover{border-color:var(--accent);background:var(--panel)}
   .preset .nm{font-weight:600;font-size:11.5px;display:block}
   .preset .nm::before{content:"$ ";color:var(--green)}
@@ -83,6 +81,11 @@
     border:1px solid var(--line2);padding:4px 10px;cursor:pointer;white-space:nowrap}
   .mathbtn:hover{border-color:var(--accent);color:var(--accent-deep)}
   .mathbtn::before{content:"ƒ ";color:var(--green)}
+  .ghbtn{display:inline-flex;align-items:center;gap:5px;font:inherit;font-size:11.5px;
+    color:var(--accent);background:var(--bg);border:1px solid var(--line2);padding:4px 10px;
+    margin-left:8px;cursor:pointer;white-space:nowrap;text-decoration:none}
+  .ghbtn:hover{border-color:var(--accent);color:var(--accent-deep)}
+  .ghbtn svg{width:13px;height:13px;fill:currentColor}
   .modal[hidden]{display:none}
   .modal{position:fixed;inset:0;z-index:50;background:rgba(20,20,16,.55);
     display:flex;align-items:flex-start;justify-content:center;padding:38px 16px;overflow-y:auto}
@@ -139,7 +142,7 @@
 <header>
   <div class="inner">
     <div class="head">
-      <span class="ttl">Why S3 Can Be Multi-Tenant And You Probably Can't</span>
+      <span class="ttl">Why S3 Can Be Multi-Tenant And You (Probably) Can't</span>
       <span class="help" tabindex="0">?<span class="tip">When does a fleet of spiky workloads
         "balance itself out"? Three things decide it: how <b>correlated</b> the workloads are, how
         <b>many</b> share the fleet, and how <b>evenly sized</b> they are. Independent spikes cancel as you
@@ -148,8 +151,8 @@
         <a href="https://www.allthingsdistributed.com/2023/07/building-and-operating-a-pretty-big-storage-system.html" target="_blank" rel="noopener">"managing heat"</a>
         section of Andy Warfield's S3 post.</span></span>
       <button class="mathbtn" id="mathBtn">show me the math</button>
+      <a class="ghbtn" href="https://github.com/agavra/heat-sandbox" target="_blank" rel="noopener" aria-label="View source on GitHub"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
     </div>
-    <div class="cmd" id="cmd"></div>
   </div>
 </header>
 
@@ -215,8 +218,8 @@
 
     <div class="panel">
       <div class="ptitle">presets</div>
-      <p class="sub">S3 is the one that amortizes; the other three are the usual reasons it doesn't for you —
-      correlated demand, a tenant too big to split, or simply too few tenants. Illustrative, not measured.</p>
+      <p class="sub">Presets that show why S3 amortizes tenants so well and the pitfalls of multi-tenancy
+      that might be preventing your system from doing so.</p>
       <div class="presets" id="presets"></div>
     </div>
   </div>
@@ -603,13 +606,6 @@ function drawAmort(){
 //============================================================================
 // Command line + status line (reflect live params)
 //============================================================================
-function updateCmd(){
-  const sz = P.sizeskew>1e-6 ? ` <span class="f">--size-skew</span>=<span class="vv">${P.sizeskew.toFixed(2)}</span>` : "";
-  document.getElementById("cmd").innerHTML =
-    `<span class="f">--corr</span>=<span class="vv">${P.rho.toFixed(2)}</span> `+
-    `<span class="f">--spikiness</span>=<span class="vv">${P.spikiness.toFixed(2)}</span>${sz} `+
-    `<span class="f">--fleet</span>=<span class="vv">${fmtN(P.N)}</span>`;
-}
 function updateStatus(){
   const pm=curvePM(P.N), floor=SIM.floorPM, util=100/pm;
   document.getElementById("st-n").textContent=fmtN(P.N);
@@ -623,7 +619,7 @@ function updateStatus(){
 // Render
 //============================================================================
 function render(){
-  syncNLabel(); updateCmd(); updateStatus();
+  syncNLabel(); updateStatus();
   drawIndividuals(); drawTimeline(); drawAmort();
 }
 
@@ -690,7 +686,7 @@ const PRESETS=[
    blurb:"all your tenants peak in the same business hours → a correlation floor scale can't remove (~1.8×)",
    p:{rho:0.10,spikiness:0.60,sizeskew:0.40,N:20000}},
   {name:"one whale tenant",
-   blurb:"one customer dwarfs the rest and can't be spread across nodes → ~2.2× however big the fleet (Kafka's hot partition)",
+   blurb:"one customer dwarfs the rest and can't be spread across nodes → ~2.2× however big the fleet",
    p:{rho:0.03,spikiness:0.50,sizeskew:0.85,N:1500}},
   {name:"too few tenants",
    blurb:"a handful of big customers — not enough to average, one bad hour dominates (~5×)",
