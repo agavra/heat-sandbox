@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>heat-amortization — statistical multiplexing sandbox</title>
+<title>Why S3 Can Be Multi-Tenant And You Probably Can't</title>
 <style>
   :root{
     --bg:#f8f8f4; --bg2:#efefe7; --panel:#fcfcf7; --line:#e0e0d4; --line2:#cacaba;
@@ -22,7 +22,7 @@
   /* ---- header + live command line ---- */
   header{border-bottom:1px solid var(--line2);background:var(--panel);padding:15px 0 13px}
   .inner{max-width:1000px;margin:0 auto;padding:0 18px}
-  .head{display:flex;align-items:center;gap:9px}
+  .head{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
   .head .ttl{font-size:19px;font-weight:650;color:var(--text);letter-spacing:.01em}
   .cmd{margin-top:9px;font-size:12.5px;color:var(--text);white-space:nowrap;
     overflow-x:auto;-webkit-overflow-scrolling:touch}
@@ -43,31 +43,21 @@
   .page{max-width:1000px;margin:0 auto;padding:18px}
 
   /* ---- parameters bar (on top) ---- */
-  .ctlgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));
-    gap:14px 22px;align-items:start}
-  .contents{display:contents}
-  .cell .celltitle{font-size:11px;color:var(--text);margin:0 0 7px;font-weight:600}
-  .cell .celltitle::before{content:"# ";color:var(--faint)}
+  .ctlgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 20px;align-items:start}
 
   /* ---- control sections ---- */
-  .toggle{display:flex;border:1px solid var(--line2);background:var(--bg2);margin:0}
-  .toggle button{flex:1;background:transparent;border:0;color:var(--dim);
-    padding:8px 6px;cursor:pointer;font:inherit;font-size:12px}
-  .toggle button+button{border-left:1px solid var(--line2)}
-  .toggle button:hover{color:var(--text)}
-  .toggle button.active{background:var(--text);color:var(--bg)}
-  .hint{color:var(--dim);font-size:10.3px;line-height:1.5;margin:6px 0 0}
+  .hint{color:var(--dim);font-size:10.3px;line-height:1.45;margin:5px 0 0}
   .hint::before{content:"// ";color:var(--faint)}
   .ctl{margin:0}
   .ctl label{display:flex;justify-content:space-between;align-items:baseline;
-    font-size:11.5px;margin-bottom:5px;gap:8px}
+    font-size:11.5px;margin-bottom:3px;gap:8px}
   .ctl .flag{color:var(--purple)}
   .ctl .v{color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums}
-  .ctl input[type=range]{width:100%;accent-color:var(--accent);height:20px;margin:0;cursor:pointer}
+  .ctl input[type=range]{width:100%;accent-color:var(--accent);height:16px;margin:0;cursor:pointer}
 
   /* ---- panels: square TUI frame + cut-in title ---- */
-  .panel{background:var(--panel);border:1px solid var(--line2);padding:15px 14px 13px;
-    margin-bottom:16px;position:relative}
+  .panel{background:var(--panel);border:1px solid var(--line2);padding:13px 14px 11px;
+    margin-bottom:14px;position:relative}
   .panel>.ptitle{position:absolute;top:-.72em;left:11px;background:var(--bg);
     padding:0 7px;font-size:11.5px;font-weight:600;color:var(--text);white-space:nowrap}
   .panel>.ptitle::before{content:"▌ ";color:var(--accent)}
@@ -79,12 +69,50 @@
   .legend b{font-weight:400}
   code{background:var(--bg2);padding:1px 4px;border:1px solid var(--line);font-size:10.5px}
 
+  /* ---- real-world preset buttons ---- */
+  .presets{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
+  .preset{text-align:left;background:var(--bg2);border:1px solid var(--line2);padding:8px 10px;
+    cursor:pointer;font:inherit;color:var(--text)}
+  .preset:hover{border-color:var(--accent);background:var(--panel)}
+  .preset .nm{font-weight:600;font-size:11.5px;display:block}
+  .preset .nm::before{content:"$ ";color:var(--green)}
+  .preset .bl{color:var(--dim);font-size:10.3px;line-height:1.4;margin-top:3px;white-space:normal}
+
+  /* ---- "show me the math" button + modal ---- */
+  .mathbtn{margin-left:auto;font:inherit;font-size:11.5px;color:var(--accent);background:var(--bg);
+    border:1px solid var(--line2);padding:4px 10px;cursor:pointer;white-space:nowrap}
+  .mathbtn:hover{border-color:var(--accent);color:var(--accent-deep)}
+  .mathbtn::before{content:"ƒ ";color:var(--green)}
+  .modal[hidden]{display:none}
+  .modal{position:fixed;inset:0;z-index:50;background:rgba(20,20,16,.55);
+    display:flex;align-items:flex-start;justify-content:center;padding:38px 16px;overflow-y:auto}
+  .modal-box{background:var(--panel);border:1px solid var(--line2);max-width:780px;width:100%;
+    box-shadow:0 12px 44px rgba(0,0,0,.28)}
+  .modal-head{display:flex;justify-content:space-between;align-items:center;
+    border-bottom:1px solid var(--line2);padding:11px 15px}
+  .modal-head .mt{font-weight:600;font-size:13px}
+  .modal-head .mt::before{content:"▌ ";color:var(--accent)}
+  .modal-x{background:transparent;border:0;color:var(--dim);font-size:15px;cursor:pointer;font-family:var(--mono)}
+  .modal-x:hover{color:var(--text)}
+  .modal-body{padding:13px 16px 18px;font-size:11.6px;line-height:1.6}
+  .modal-body h4{font-size:11.5px;margin:15px 0 5px;color:var(--accent-deep);font-weight:600}
+  .modal-body h4:first-child{margin-top:0}
+  .modal-body h4::before{content:"# ";color:var(--faint)}
+  .modal-body p{margin:0 0 7px;color:var(--dim)}
+  .modal-body .eq{display:block;background:var(--bg2);border:1px solid var(--line);
+    padding:8px 11px;margin:6px 0;color:var(--text);white-space:pre-wrap}
+  .modal-body ul{margin:4px 0 8px;padding-left:17px;color:var(--dim)}
+  .modal-body li{margin:2px 0}
+  .modal-body code{background:var(--bg2);border:1px solid var(--line);padding:0 3px;color:var(--text)}
+  .modal-body b{color:var(--text)}
+
   /* ---- ascii sparkline grid ---- */
-  #grid{display:grid;gap:10px;height:286px;overflow-y:auto;align-content:start;
+  #grid{display:grid;gap:7px;height:210px;overflow-y:auto;align-content:start;
     padding-right:2px}
   .sptile{display:flex;align-items:center;gap:7px;overflow:hidden;white-space:nowrap;
-    background:var(--bg2);border:1px solid var(--line);padding:4px 7px}
+    background:var(--bg2);border:1px solid var(--line);padding:3px 7px}
   .sptile .lab{color:var(--faint);font-size:10.5px;flex:0 0 auto;font-variant-numeric:tabular-nums}
+  .sptile .sz{color:var(--amber);font-size:10px;flex:0 0 auto;font-variant-numeric:tabular-nums}
   .sptile .sp{font-size:12px;line-height:1;letter-spacing:0;overflow:hidden;flex:1 1 auto}
   .sptile.more{color:var(--dim);font-size:10.5px;justify-content:center;background:transparent;
     border-style:dashed}
@@ -101,6 +129,7 @@
 
   @media (max-width:760px){
     .row2{grid-template-columns:1fr;gap:0}
+    .ctlgrid{grid-template-columns:1fr}
     .page{padding:14px 12px 20px}
   }
 </style>
@@ -110,13 +139,15 @@
 <header>
   <div class="inner">
     <div class="head">
-      <span class="ttl">heat-amortization — statistical multiplexing sandbox</span>
+      <span class="ttl">Why S3 Can Be Multi-Tenant And You Probably Can't</span>
       <span class="help" tabindex="0">?<span class="tip">When does a fleet of spiky workloads
-        "balance itself out"? Two things decide it: how <b>correlated</b> the workloads are, and how
-        <b>many</b> share the fleet. Independent spikes cancel as you add workloads; a shared daily cycle
-        stacks up no matter the scale. Inspired by the
+        "balance itself out"? Three things decide it: how <b>correlated</b> the workloads are, how
+        <b>many</b> share the fleet, and how <b>evenly sized</b> they are. Independent spikes cancel as you
+        add workloads; correlated spikes — or one workload too big to split — stack up no matter the scale.
+        Inspired by the
         <a href="https://www.allthingsdistributed.com/2023/07/building-and-operating-a-pretty-big-storage-system.html" target="_blank" rel="noopener">"managing heat"</a>
         section of Andy Warfield's S3 post.</span></span>
+      <button class="mathbtn" id="mathBtn">show me the math</button>
     </div>
     <div class="cmd" id="cmd"></div>
   </div>
@@ -126,32 +157,18 @@
   <div class="panel">
     <div class="ptitle">parameters</div>
     <div class="ctlgrid">
-      <div class="cell">
-        <div class="celltitle">workload type</div>
-        <div class="toggle" id="modeToggle"></div>
+      <div class="ctlblock">
+        <div id="corrCtl"></div>
+        <p class="hint">0% = each spikes on its own schedule · 100% = all spike together.</p>
       </div>
-      <div id="corrSection" class="contents">
-        <div class="cell">
-          <div id="corrCtl"></div>
-          <p class="hint">0% = each workload spikes on its own schedule · 100% = all spike together.</p>
-        </div>
-        <div class="cell">
-          <div id="spikeCtl"></div>
-          <p class="hint">higher = rarer but taller bursts (heavier tail); lower = gentle, frequent bumps.</p>
-        </div>
+      <div class="ctlblock">
+        <div id="spikeCtl"></div>
+        <p class="hint">higher = rarer, taller bursts (heavier tail); lower = gentle bumps.</p>
       </div>
-      <div id="phaseSection" class="contents">
-        <div class="cell">
-          <div id="phaseCtl"></div>
-          <p class="hint">0% = every cycle peaks at the same hour · 100% = peaks spread around the clock.</p>
-        </div>
-        <div class="cell">
-          <div id="ampvarCtl"></div>
-          <p class="hint">0% = same daily swing for all · 100% = swings vary widely (some flat, some huge).</p>
-        </div>
-      </div>
-      <div class="cell">
-        <div id="fleetCtls"></div>
+      <div class="ctlblock" id="fleetCtls"></div>
+      <div class="ctlblock">
+        <div id="sizeCtl"></div>
+        <p class="hint">0% = all workloads same size · 100% = a few elephants dominate.</p>
       </div>
     </div>
   </div>
@@ -183,26 +200,116 @@
       <div class="panel">
         <div class="ptitle">peak / mean vs. fleet size</div>
         <p class="sub">How burstiness collapses as workloads stack, out to 100M. Solid = simulated;
-        dashed = fitted <code>floor + C·N⁻ᵖ</code> (p≈0.5 light tails, slower for heavy Pareto). The
-        <b>floor</b> is the correlated burstiness no scale removes.</p>
+        dashed = fitted model. Two things scale can't remove: the <b>correlation floor</b> (load that
+        peaks together) and the <b>indivisible floor</b> (one workload too big to split across the fleet).</p>
         <canvas id="amort" data-h="190"></canvas>
         <div class="legend">
           <span><b style="color:var(--accent)">───</b> simulated</span>
           <span><b style="color:var(--purple)">╌╌</b> fitted → 100M</span>
-          <span><b style="color:var(--red)">╌╌</b> floor</span>
+          <span><b style="color:var(--red)">╌╌</b> correlation floor</span>
+          <span><b style="color:var(--amber)">┈</b> indivisible floor</span>
           <span><b style="color:var(--grey)">│</b> current N</span>
         </div>
       </div>
     </div>
+
+    <div class="panel">
+      <div class="ptitle">presets</div>
+      <p class="sub">S3 is the one that amortizes; the other three are the usual reasons it doesn't for you —
+      correlated demand, a tenant too big to split, or simply too few tenants. Illustrative, not measured.</p>
+      <div class="presets" id="presets"></div>
+    </div>
   </div>
 
 <footer class="status" id="status">
-  <span>mode=<b id="st-mode">spiky</b></span>
   <span>N=<b id="st-n">256</b></span>
   <span>peak/mean=<b id="st-pm">—</b></span>
   <span>floor=<b id="st-floor">—</b></span>
+  <span>top_workload≈<b id="st-top">—</b></span>
   <span>achievable_util≈<b id="st-util">—</b></span>
 </footer>
+
+<div class="modal" id="mathModal" hidden>
+  <div class="modal-box">
+    <div class="modal-head">
+      <span class="mt">the math (and the assumptions behind it)</span>
+      <button class="modal-x" id="mathClose" aria-label="close">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--faint)">Generated with the help of Opus 4.8 [xhigh].</p>
+      <p>A toy model, not a benchmark. It exists to build intuition for <b>statistical
+      multiplexing</b>: when does pooling many bursty workloads let you run the pool near 100%
+      utilization, and when does it not. Everything below is per simulated <b>day</b> of
+      <code>T = 240</code> ticks.</p>
+
+      <h4>One workload's demand</h4>
+      <p>Each workload <code>i</code> draws a demand curve that mixes its own independent bursts with a
+      shared common-mode signal, weighted by the correlation knob <code>ρ = --corr</code>:</p>
+      <span class="eq">dᵢ(t) = (1−ρ)·indepᵢ(t) + ρ·common(t)</span>
+      <p><code>indepᵢ(t)</code> is fresh per workload; <code>common(t)</code> is shared by everyone — so a
+      high ρ means workloads spike <b>together</b>. Both are Pareto draws normalized to mean 1.</p>
+
+      <h4>How bursty (--spikiness)</h4>
+      <p>Bursts are heavy-tailed Pareto with tail index set by spikiness <code>s</code>:</p>
+      <span class="eq">α = 1.3 + (1−s)·1.7      (s=1 → α=1.3 heavy / rare tall spikes; s=0 → α=3 gentle)
+xₘ = (α−1)/α   chosen so each workload averages to 1</span>
+
+      <h4>Workload sizes (--size-skew)</h4>
+      <p>Each workload also has a <b>size</b> <code>wᵢ</code> (its share of total load). With skew
+      <code>k = 0</code> all sizes are equal; with <code>k &gt; 0</code> they're Pareto:</p>
+      <span class="eq">αₛ = 1.06 + 2.6·(1−k)      (smaller αₛ = a few elephants dominate)</span>
+      <p>When <code>αₛ &lt; 2</code> the distribution has infinite variance: the largest tenant stays a
+      meaningful share of the fleet <b>no matter how many you add</b>. That's the indivisible case.</p>
+
+      <h4>The fleet aggregate</h4>
+      <p>For a fleet of <code>N</code> workloads the total demand and the headline metric are:</p>
+      <span class="eq">D(t) = Σᵢ wᵢ·dᵢ(t)
+peak/mean = maxₜ D(t) / meanₜ D(t)        (1× = perfectly flat = run at 100%)</span>
+
+      <h4>Two floors no fleet size can cross</h4>
+      <ul>
+        <li><b>Correlation floor</b> = <code>maxₜ E[d(t)] / meanₜ E[d(t)]</code> — the shape of the
+        <i>expected</i> demand. Independent noise averages out; the shared common-mode does not.</li>
+        <li><b>Indivisible floor</b> = <code>1 + topShare(N)·(burst − 1)</code>, where
+        <code>topShare(N)</code> is the largest single workload's share of the total and <code>burst</code>
+        is one workload's own peak/mean. One tenant too big to split sets a floor on its own.</li>
+      </ul>
+      <p>The achievable curve is <code>max(correlation-decay, indivisible floor)</code>.</p>
+
+      <h4>Amortization with scale</h4>
+      <p>Independent variation cancels as workloads stack, so the excess over the correlation floor decays
+      as a power law fit from the simulation:</p>
+      <span class="eq">peak/mean(N) ≈ correlationFloor + C·N^(−p)
+p ≈ 0.5 for light tails, smaller for heavy / size-skewed fleets</span>
+
+      <h4>How it's actually computed</h4>
+      <ul>
+        <li>Simulate a representative sample of <code>N_SAMPLE = 4096</code> workloads with a fixed seed.</li>
+        <li>Measure peak/mean at growing counts, fit <code>C</code> and <code>p</code>, extrapolate to
+        <code>100M</code>.</li>
+        <li><code>topShare(N)</code> past the sample is extrapolated from the size tail index
+        (<code>~ N^(1/αₛ − 1)</code>) — directional, a model, not a measurement.</li>
+      </ul>
+
+      <h4>Caveats</h4>
+      <ul>
+        <li>Sizes are independent of shape; one synthetic day; no placement/bin-packing — just the
+        statistical limit.</li>
+        <li>Presets are illustrative parameter choices, not measured from real systems.</li>
+      </ul>
+
+      <h4>Further reading</h4>
+      <ul>
+        <li><a href="https://www.allthingsdistributed.com/2023/07/building-and-operating-a-pretty-big-storage-system.html" target="_blank" rel="noopener">Warfield, "Building and operating a pretty big storage system (S3)" (2023)</a> — the "managing heat" argument this sandbox is built around.</li>
+        <li><a href="https://en.wikipedia.org/wiki/Statistical_time-division_multiplexing" target="_blank" rel="noopener">Statistical multiplexing (Wikipedia)</a> — the pooling-gain idea: sharing capacity across bursty users beats static allocation.</li>
+        <li><a href="https://en.wikipedia.org/wiki/Pareto_distribution" target="_blank" rel="noopener">Pareto distribution (Wikipedia)</a> — the heavy-tailed law behind both the bursts and the workload sizes here.</li>
+        <li><a href="https://en.wikipedia.org/wiki/Central_limit_theorem" target="_blank" rel="noopener">Central limit theorem (Wikipedia)</a> — why independent variation averages out as <code>~1/√N</code> when you pool many workloads.</li>
+        <li><a href="https://en.wikipedia.org/wiki/Heavy-tailed_distribution" target="_blank" rel="noopener">Heavy-tailed distribution (Wikipedia)</a> — when variance is infinite (α&lt;2) the sum is dominated by its largest term, so it never averages out: the indivisible floor.</li>
+        <li><a href="https://dl.acm.org/doi/10.1109/90.282603" target="_blank" rel="noopener">Leland, Taqqu, Willinger &amp; Wilson, "On the Self-Similar Nature of Ethernet Traffic" (1994)</a> — empirical evidence that real traffic really is bursty and heavy-tailed.</li>
+      </ul>
+    </div>
+  </div>
+</div>
 
 <script>
 //============================================================================
@@ -213,17 +320,15 @@ const N_MAX = 4096;      // largest fleet actually simulated
 const MONO = 'ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace';
 
 const P = {
-  mode:"spiky",          // "spiky" | "sine"
-  rho:0.0, spikiness:0.7,// [spiky] correlation, tail heaviness
-  spread:0.0, ampvar:0.0,// [sine] phase spread, amplitude spread
-  amp:0.9, N:256, seed:7,
+  rho:0.0, spikiness:0.7,// correlation, tail heaviness
+  sizeskew:0.70,         // 0 = equal-sized workloads, 1 = a few elephants dominate
+  N:256, seed:7,
 };
 
 const SLIDERS = {
   corr:  [["rho","--corr",0,1,0.02]],
   spike: [["spikiness","--spikiness",0,1,0.02]],
-  phase: [["spread","--phase-spread",0,1,0.02]],
-  ampvar:[["ampvar","--amp-var",0,1,0.02]],
+  size:  [["sizeskew","--size-skew",0,1,0.02]],
 };
 
 //============================================================================
@@ -244,69 +349,78 @@ const N_LIMIT=1e8;
 
 function simulate(){
   const rng=mulberry32(P.seed>>>0);
-  const TWO_PI=2*Math.PI, spiky=(P.mode==="spiky");
-  const rho=P.rho, amp=P.amp, spread=P.spread, ampvar=P.ampvar;
+  const rho=P.rho;
   const alpha=1.3+(1-P.spikiness)*1.7;
   const xm=(alpha-1)/alpha;
 
-  let com=null;
-  if(spiky){ com=new Float64Array(T); for(let t=0;t<T;t++) com[t]=pareto(rng,alpha,xm); }
-  const phaseAvgCos=theta=>{ if(spread<1e-6)return Math.cos(theta);
-    const wdt=spread*TWO_PI; return (Math.sin(theta+wdt)-Math.sin(theta))/wdt; };
+  // shared common-mode burst signal (heavy-tailed); rho mixes it into each
+  // workload, so a high rho means workloads spike together → correlation floor.
+  const com=new Float64Array(T); for(let t=0;t<T;t++) com[t]=pareto(rng,alpha,xm);
 
-  const series=new Float32Array(N_SAMPLE*T);
-  const sumDet=new Float64Array(T), sumRes=new Float64Array(T), sumRes2=new Float64Array(T);
-  let sumWMax=0;
+  // Workload SIZES: power-law (Pareto) when skewed; equal when not. The tail
+  // index sets how a single elephant's share shrinks with fleet size — and thus
+  // how slowly the fleet can average it out (the indivisible / hot-shard floor).
+  const skew=P.sizeskew, sized=skew>1e-6;
+  const aS = sized ? 1.06 + 2.6*(1-skew) : Infinity;   // ~3.66 (mild) → 1.06 (extreme)
+  const xmS = sized ? (aS-1)/aS : 1;
+  const invA = sized ? 1/aS : 0;
+
+  const series=new Float32Array(N_SAMPLE*T);     // normalized SHAPE per workload
+  const sizes=new Float32Array(N_SAMPLE);        // per-workload size weight
+  const sumDetU=new Float64Array(T);             // unweighted det → correlation floor
+  const sumDet=new Float64Array(T), sumRes=new Float64Array(T);  // size-weighted → timeline
+  let sumWMax=0, wMax=0;
 
   for(let i=0;i<N_SAMPLE;i++){
-    const phi=spread*TWO_PI*rng();
-    const A=Math.max(0,Math.min(0.99, amp*(1+ampvar*(2*rng()-1))));
+    const w = sized ? pareto(rng,aS,xmS) : 1;    // size weight (mean ≈ 1)
+    sizes[i]=w; if(w>wMax)wMax=w;
     let mx=0;
     for(let t=0;t<T;t++){
-      const theta=TWO_PI*t/T;
-      let d,det;
-      if(spiky){
-        const ind=pareto(rng,alpha,xm);
-        d=(1-rho)*ind + rho*com[t];
-        det=(1-rho)*1 + rho*com[t];
-      }else{
-        d=1 - A*Math.cos(theta+phi);
-        det=1 - amp*phaseAvgCos(theta);
-      }
+      const ind=pareto(rng,alpha,xm);
+      let d=(1-rho)*ind + rho*com[t];
+      const det=(1-rho)*1 + rho*com[t];
       if(d<0)d=0;
       series[i*T+t]=d; if(d>mx)mx=d;
-      const r=d-det; sumDet[t]+=det; sumRes[t]+=r; sumRes2[t]+=r*r;
+      sumDetU[t]+=det; sumDet[t]+=w*det; sumRes[t]+=w*(d-det);
     }
     sumWMax+=mx;
   }
 
-  const e=new Float64Array(T), vr=new Float64Array(T), resShape=new Float64Array(T);
-  let meanPerW=0, floorPeak=0;
+  const e=new Float64Array(T), resShape=new Float64Array(T);
+  let meanPerW=0, eUmean=0, eUpeak=0;
   for(let t=0;t<T;t++){
-    e[t]=sumDet[t]/N_SAMPLE; vr[t]=Math.max(0,sumRes2[t]/N_SAMPLE);
-    resShape[t]=sumRes[t]/Math.sqrt(N_SAMPLE);
-    meanPerW+=e[t]; if(e[t]>floorPeak)floorPeak=e[t];
+    e[t]=sumDet[t]/N_SAMPLE; resShape[t]=sumRes[t]/Math.sqrt(N_SAMPLE);
+    meanPerW+=e[t];
+    const eu=sumDetU[t]/N_SAMPLE; eUmean+=eu; if(eu>eUpeak)eUpeak=eu;
   }
-  meanPerW/=T;
-  const floorPM=floorPeak/meanPerW;
-  const avgWMax=sumWMax/N_SAMPLE;
+  meanPerW/=T; eUmean/=T;
+  const corrFloor=eUpeak/eUmean;       // floor from correlated time-shape only
+  const avgWMax=sumWMax/N_SAMPLE;      // burst factor of a single workload
+  // size of the largest workload at fleet N, as a share of the total (mean=1).
+  // calibrated off the sample's observed max so we don't need a Γ function.
+  const gscale = sized ? wMax/Math.pow(N_SAMPLE,invA) : 1;
 
   const checks=[]; for(let k=1;k<=N_SAMPLE;k=Math.max(k+1,Math.round(k*1.6))) checks.push(Math.min(k,N_SAMPLE));
   const aggC=new Float64Array(T); let ci=0; const meas=[];
   for(let i=0;i<N_SAMPLE;i++){
-    for(let t=0;t<T;t++)aggC[t]+=series[i*T+t];
+    const w=sizes[i]; for(let t=0;t<T;t++)aggC[t]+=w*series[i*T+t];
     if(i+1===checks[ci]){let m=0,pk=0;for(let t=0;t<T;t++){m+=aggC[t];if(aggC[t]>pk)pk=aggC[t];}m/=T;meas.push([i+1,pk/m]);ci++;}
   }
   let sx=0,sy=0,sxx=0,sxy=0,n=0;
-  for(const [N,pm] of meas){const ex=pm-floorPM; if(N>=8 && ex>1e-3){const x=Math.log(N),y=Math.log(ex);sx+=x;sy+=y;sxx+=x*x;sxy+=x*y;n++;}}
-  let p=0.5, C=Math.max(0,meas[0][1]-floorPM);
+  for(const [N,pm] of meas){const ex=pm-corrFloor; if(N>=8 && ex>1e-3){const x=Math.log(N),y=Math.log(ex);sx+=x;sy+=y;sxx+=x*x;sxy+=x*y;n++;}}
+  let p=0.5, C=Math.max(0,meas[0][1]-corrFloor);
   if(n>=3){const den=n*sxx-sx*sx; if(Math.abs(den)>1e-9){const slope=(n*sxy-sx*sy)/den; p=Math.max(0.05,-slope); C=Math.exp((sy-slope*sx)/n);}}
 
-  SIM={series,e,vr,resShape,meanPerW,avgWMax,floorPM,meas,C,p};
+  SIM={series,sizes,e,resShape,meanPerW,avgWMax,floorPM:corrFloor,sized,gscale,invA,meas,C,p};
   derive();
 }
 
-function curvePM(N){return SIM.floorPM + SIM.C*Math.pow(Math.max(1,N),-SIM.p);}
+// share of total demand held by the single largest workload at fleet size N
+function topShare(N){N=Math.max(1,N);
+  return SIM.sized ? Math.min(1, SIM.gscale*Math.pow(N,SIM.invA)/N) : 1/N;}
+// floor set by that one indivisible workload — it can't be spread across the fleet
+function indivFloor(N){return 1 + topShare(N)*(SIM.avgWMax-1);}
+function curvePM(N){return Math.max(SIM.floorPM + SIM.C*Math.pow(Math.max(1,N),-SIM.p), indivFloor(N));}
 
 let VIEW=null;
 function derive(){
@@ -351,13 +465,13 @@ function charW(){
 }
 function blkLevel(v,cap){const l=Math.round(v/cap*8);return l<0?0:l>8?8:l;}
 function blkClass(l){return l<=1?0:l<=3?1:l<=5?2:l<=7?3:4;}
-function sparkline(series,i,COLS,cap){
+function sparkline(series,i,COLS,cap,scale){
   const base=i*T, bw=T/COLS;
   let out="",curCls=-1,run="";
   for(let c=0;c<COLS;c++){
     const t0=Math.floor(c*bw), t1=Math.max(t0+1,Math.floor((c+1)*bw));
     let s=0,cnt=0; for(let t=t0;t<t1&&t<T;t++){s+=series[base+t];cnt++;}
-    const v=cnt?s/cnt:0, l=blkLevel(v,cap), cls=blkClass(l);
+    const v=(cnt?s/cnt:0)*scale, l=blkLevel(v,cap), cls=blkClass(l);
     if(cls!==curCls){if(run)out+=`<i class="b${curCls}">${run}</i>`;run="";curCls=cls;}
     run+=BLK[l];
   }
@@ -365,7 +479,7 @@ function sparkline(series,i,COLS,cap){
   return out;
 }
 function drawIndividuals(){
-  const host=document.getElementById("grid"), N=P.N, {series}=SIM;
+  const host=document.getElementById("grid"), N=P.N, {series,sizes,sized}=SIM;
   const CAP=24, ell=N>CAP, shown=ell?CAP-1:N;
   const W=host.clientWidth||host.parentElement.clientWidth;
   const cw=charW();
@@ -374,13 +488,15 @@ function drawIndividuals(){
   const COLS=Math.max(12,Math.min(72,Math.floor((tileW-4*cw-22)/cw)));
 
   const samp=[];
-  for(let i=0;i<shown;i++)for(let t=0;t<T;t+=3)samp.push(series[i*T+t]);
+  for(let i=0;i<shown;i++)for(let t=0;t<T;t+=3)samp.push(series[i*T+t]*sizes[i]);
   samp.sort((a,b)=>a-b);
   const capY=Math.min(10,Math.max(2.2,(samp[Math.floor(samp.length*0.97)]||3)*1.08));
 
   let html="";
-  for(let i=0;i<shown;i++)
-    html+=`<div class="sptile"><span class="lab">w${String(i).padStart(2,"0")}</span><span class="sp">${sparkline(series,i,COLS,capY)}</span></div>`;
+  for(let i=0;i<shown;i++){
+    const sz = sized ? `<span class="sz">×${sizes[i]<9.95?sizes[i].toFixed(1):Math.round(sizes[i])}</span>` : "";
+    html+=`<div class="sptile"><span class="lab">w${String(i).padStart(2,"0")}</span><span class="sp">${sparkline(series,i,COLS,capY,sizes[i])}</span>${sz}</div>`;
+  }
   if(ell)html+=`<div class="sptile more">+ ${(N-shown).toLocaleString()} more workloads …</div>`;
   host.style.gridTemplateColumns=`repeat(${cols},1fr)`;
   host.innerHTML=html;
@@ -433,15 +549,24 @@ function drawAmort(){
   [[1,"1"],[100,"100"],[1e4,"10K"],[1e6,"1M"],[1e8,"100M"]].forEach(([n,lab])=>{
     const x=X(n);ctx.strokeStyle=css("--line");ctx.beginPath();ctx.moveTo(x,y0);ctx.lineTo(x,y1);ctx.stroke();
     ctx.fillStyle=css("--dim");ctx.fillText(lab,x,h-7);});
-  // floor
+  // correlation floor (from the time-shape only)
   ctx.strokeStyle=css("--red");ctx.setLineDash([4,4]);ctx.lineWidth=1.3;ctx.beginPath();
   ctx.moveTo(x0,Y(floor));ctx.lineTo(x1,Y(floor));ctx.stroke();ctx.setLineDash([]);
   ctx.fillStyle=css("--red");ctx.textAlign="left";ctx.font="10px "+MONO;
-  ctx.fillText("floor "+floor.toFixed(2)+"×",x0+6,Y(floor)-4);
-  // fitted decay
+  ctx.fillText("correlation floor "+floor.toFixed(2)+"×",x0+6,Y(floor)-4);
+  // indivisible floor — the single biggest workload can't be split across the fleet
+  if(SIM.sized){
+    ctx.strokeStyle=css("--amber");ctx.setLineDash([2,3]);ctx.lineWidth=1.3;ctx.beginPath();
+    for(let j=0;j<=160;j++){const n=Math.pow(10,lmax*j/160);
+      const x=X(n),y=Y(clip(Math.max(1,indivFloor(n))));j?ctx.lineTo(x,y):ctx.moveTo(x,y);}
+    ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle=css("--amber");ctx.textAlign="right";
+    ctx.fillText("indivisible",x1-4,Y(clip(indivFloor(N_LIMIT)))-4);ctx.textAlign="left";
+  }
+  // fitted model = max(correlation decay, indivisible floor)
   ctx.strokeStyle=css("--purple");ctx.globalAlpha=.9;ctx.setLineDash([5,4]);ctx.lineWidth=1.5;ctx.beginPath();
-  for(let j=0;j<=160;j++){const n=Math.pow(10,lmax*j/160);const v=floor+fitC*Math.pow(n,-fitP);
-    const x=X(n),y=Y(clip(Math.max(1,v)));j?ctx.lineTo(x,y):ctx.moveTo(x,y);}
+  for(let j=0;j<=160;j++){const n=Math.pow(10,lmax*j/160);
+    const x=X(n),y=Y(clip(Math.max(1,curvePM(n))));j?ctx.lineTo(x,y):ctx.moveTo(x,y);}
   ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
   // current N marker + (x, y) readout
   const xn=X(VIEW.N), pmN=curvePM(VIEW.N), yN=Y(clip(pmN));
@@ -466,19 +591,19 @@ function drawAmort(){
 // Command line + status line (reflect live params)
 //============================================================================
 function updateCmd(){
-  const f = P.mode==="spiky"
-    ? `<span class="f">--corr</span>=<span class="vv">${P.rho.toFixed(2)}</span> <span class="f">--spikiness</span>=<span class="vv">${P.spikiness.toFixed(2)}</span>`
-    : `<span class="f">--phase-spread</span>=<span class="vv">${P.spread.toFixed(2)}</span> <span class="f">--amp-var</span>=<span class="vv">${P.ampvar.toFixed(2)}</span>`;
+  const sz = P.sizeskew>1e-6 ? ` <span class="f">--size-skew</span>=<span class="vv">${P.sizeskew.toFixed(2)}</span>` : "";
   document.getElementById("cmd").innerHTML =
-    `<span class="f">--mode</span>=<span class="vv">${P.mode}</span> ${f} <span class="f">--fleet</span>=<span class="vv">${fmtN(P.N)}</span>`;
+    `<span class="f">--corr</span>=<span class="vv">${P.rho.toFixed(2)}</span> `+
+    `<span class="f">--spikiness</span>=<span class="vv">${P.spikiness.toFixed(2)}</span>${sz} `+
+    `<span class="f">--fleet</span>=<span class="vv">${fmtN(P.N)}</span>`;
 }
 function updateStatus(){
   const pm=curvePM(P.N), floor=SIM.floorPM, util=100/pm;
-  document.getElementById("st-mode").textContent=P.mode;
   document.getElementById("st-n").textContent=fmtN(P.N);
   document.getElementById("st-pm").textContent=pm.toFixed(2)+"×";
   document.getElementById("st-floor").textContent=floor.toFixed(2)+"×";
   document.getElementById("st-util").textContent=util.toFixed(0)+"%";
+  document.getElementById("st-top").textContent=(topShare(P.N)*100).toFixed(topShare(P.N)<0.1?1:0)+"%";
 }
 
 //============================================================================
@@ -493,7 +618,7 @@ function render(){
 // Build controls
 //============================================================================
 function fmt(id,val){
-  if(["rho","spread","spikiness","ampvar"].includes(id))return Math.round(val*100)+"%";
+  if(["rho","spikiness","sizeskew"].includes(id))return Math.round(val*100)+"%";
   return (val%1===0)?val.toString():val.toFixed(2);
 }
 function makeSlider(parent,[id,label,min,max,step]){
@@ -540,28 +665,65 @@ function schedule(id){
   raf=requestAnimationFrame(()=>{raf=null; if(needSim){needSim=false;simulate();}else{derive();}});
 }
 
+//============================================================================
+// Real-world presets — each lands at a different spot on the
+// correlation × fleet-size map. Illustrative, not measured.
+//============================================================================
+const PRESETS=[
+  {name:"S3 object storage",
+   blurb:"billions of objects, accessed independently — even with wildly uneven sizes, scale averages the heat to ~1.1× (Warfield's post)",
+   p:{rho:0.012,spikiness:0.55,sizeskew:0.75,N:50000000}},
+  {name:"correlated demand",
+   blurb:"all your tenants peak in the same business hours → a correlation floor scale can't remove (~1.8×)",
+   p:{rho:0.10,spikiness:0.60,sizeskew:0.40,N:20000}},
+  {name:"one whale tenant",
+   blurb:"one customer dwarfs the rest and can't be spread across nodes → ~2.2× however big the fleet (Kafka's hot partition)",
+   p:{rho:0.03,spikiness:0.50,sizeskew:0.85,N:1500}},
+  {name:"too few tenants",
+   blurb:"a handful of big customers — not enough to average, one bad hour dominates (~5×)",
+   p:{rho:0.02,spikiness:0.60,sizeskew:0.60,N:12}},
+];
+function applyPreset(p){
+  Object.assign(P,p);
+  ["rho","spikiness","sizeskew"].forEach(id=>{
+    const s=document.getElementById("s_"+id); if(s)s.value=P[id];
+    const v=document.getElementById("v_"+id); if(v)v.textContent=fmt(id,P[id]);
+  });
+  const sN=document.getElementById("s_N"); if(sN)sN.value=nToSlider(P.N);
+  document.getElementById("v_N").textContent=fmtN(P.N);
+  simulate();
+}
+function buildPresets(){
+  const host=document.getElementById("presets");
+  PRESETS.forEach(ps=>{
+    const b=document.createElement("button");b.className="preset";
+    b.innerHTML=`<span class="nm">${ps.name}</span><span class="bl">${ps.blurb}</span>`;
+    b.addEventListener("click",()=>applyPreset(ps.p));
+    host.appendChild(b);
+  });
+}
+
 function buildUI(){
   SLIDERS.corr.forEach(s=>makeSlider(document.getElementById("corrCtl"),s));
   SLIDERS.spike.forEach(s=>makeSlider(document.getElementById("spikeCtl"),s));
-  SLIDERS.phase.forEach(s=>makeSlider(document.getElementById("phaseCtl"),s));
-  SLIDERS.ampvar.forEach(s=>makeSlider(document.getElementById("ampvarCtl"),s));
+  SLIDERS.size.forEach(s=>makeSlider(document.getElementById("sizeCtl"),s));
   makeLogN(document.getElementById("fleetCtls"));
-
-  const mt=document.getElementById("modeToggle");
-  [["spiky","spiky"],["sine","sinusoidal"]].forEach(([m,lab])=>{
-    const b=document.createElement("button");b.textContent=lab;b.dataset.m=m;
-    b.addEventListener("click",()=>setMode(m)); mt.appendChild(b);
-  });
-  updateModeUI();
+  buildPresets();
 }
-function updateModeUI(){
-  document.querySelectorAll("#modeToggle button").forEach(b=>b.classList.toggle("active",b.dataset.m===P.mode));
-  document.getElementById("corrSection").style.display = P.mode==="spiky"?"":"none";
-  document.getElementById("phaseSection").style.display= P.mode==="sine" ?"":"none";
-}
-function setMode(m){ P.mode=m; updateModeUI(); simulate(); }
 
 function syncNLabel(){document.getElementById("nlabel").textContent="N = "+fmtN(P.N);}
+
+//============================================================================
+// "show me the math" modal
+//============================================================================
+(function(){
+  const modal=document.getElementById("mathModal");
+  const show=v=>{modal.hidden=!v;};
+  document.getElementById("mathBtn").addEventListener("click",()=>show(true));
+  document.getElementById("mathClose").addEventListener("click",()=>show(false));
+  modal.addEventListener("click",e=>{if(e.target===modal)show(false);});
+  document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!modal.hidden)show(false);});
+})();
 
 //============================================================================
 // Boot
