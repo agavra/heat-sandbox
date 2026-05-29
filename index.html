@@ -214,15 +214,15 @@
 
       <div class="panel">
         <div class="ptitle">peak / mean vs. fleet size</div>
-        <p class="sub">How burstiness collapses as workloads stack, out to 100M. Solid = simulated;
-        dashed = fitted model. Two things scale can't remove: the <b>correlation floor</b> (load that
-        peaks together) and the <b>indivisible floor</b> (one workload too big to split across the fleet).</p>
+        <p class="sub">How burstiness changes as workloads stack, out to 100M. Solid = simulated;
+        dashed = extrapolated model. The true asymptotic floor is <b>correlated load</b>; the
+        <b>indivisible estimate</b> shows finite-size pressure from the largest workload's share.</p>
         <canvas id="amort" data-h="190"></canvas>
         <div class="legend">
           <span><b style="color:var(--accent)">───</b> simulated</span>
           <span><b style="color:var(--purple)">╌╌</b> fitted → 100M</span>
           <span><b style="color:var(--red)">╌╌</b> correlation floor</span>
-          <span><b style="color:var(--amber)">┈</b> indivisible floor</span>
+          <span><b style="color:var(--amber)">┈</b> indivisible estimate</span>
           <span><b style="color:var(--grey)">│</b> current N</span>
         </div>
       </div>
@@ -259,37 +259,44 @@
 
       <h4>One workload's demand</h4>
       <p>Each workload <code>i</code> draws a demand curve that mixes its own independent bursts with a
-      shared common-mode signal, weighted by the correlation knob <code>ρ = --corr</code>:</p>
+      shared common-mode signal. The <code>--corr</code> knob is the shared-signal weight
+      <code>ρ</code>:</p>
       <span class="eq">dᵢ(t) = (1−ρ)·indepᵢ(t) + ρ·common(t)</span>
       <p><code>indepᵢ(t)</code> is fresh per workload; <code>common(t)</code> is shared by everyone — so a
-      high ρ means workloads spike <b>together</b>. Both are Pareto draws normalized to mean 1.</p>
+      high ρ means workloads spike <b>together</b>. Both are Pareto draws normalized to mean 1.
+      Because the tails can have infinite variance, <code>ρ</code> is a mixing weight, not a literal
+      Pearson correlation coefficient.</p>
 
       <h4>How bursty (--spikiness)</h4>
       <p>Bursts are heavy-tailed Pareto with tail index set by spikiness <code>s</code>:</p>
-      <span class="eq">α = 1.3 + (1−s)·1.7      (s=1 → α=1.3 heavy / rare tall spikes; s=0 → α=3 gentle)
-xₘ = (α−1)/α   chosen so each workload averages to 1</span>
+      <span class="eq">α = 1.3 + 1.7·(1−s) + 70·(1−s)^8
+      (s=1 → α=1.3 heavy / rare tall spikes; s=0 → α=73 nearly flat)
+xₘ = (α−1)/α   chosen so each draw has expected mean 1</span>
 
       <h4>Workload sizes (--size-skew)</h4>
       <p>Each workload also has a <b>size</b> <code>wᵢ</code> (its share of total load). With skew
       <code>k = 0</code> all sizes are equal; with <code>k &gt; 0</code> they're Pareto:</p>
       <span class="eq">αₛ = 1.06 + 2.6·(1−k)      (smaller αₛ = a few elephants dominate)</span>
-      <p>When <code>αₛ &lt; 2</code> the distribution has infinite variance: the largest tenant stays a
-      meaningful share of the fleet <b>no matter how many you add</b>. That's the indivisible case.</p>
+      <p>When <code>1 &lt; αₛ &lt; 2</code> the mean exists but variance is infinite. The largest
+      tenant's share still trends toward zero, but only as <code>N^(1/αₛ − 1)</code>, so near
+      <code>αₛ = 1</code> it can dominate practical fleet sizes.</p>
 
       <h4>The fleet aggregate</h4>
       <p>For a fleet of <code>N</code> workloads the total demand and the headline metric are:</p>
       <span class="eq">D(t) = Σᵢ wᵢ·dᵢ(t)
 peak/mean = maxₜ D(t) / meanₜ D(t)        (1× = perfectly flat = run at 100%)</span>
 
-      <h4>Two floors no fleet size can cross</h4>
+      <h4>One floor and one finite-size estimate</h4>
       <ul>
         <li><b>Correlation floor</b> = <code>maxₜ E[d(t)] / meanₜ E[d(t)]</code> — the shape of the
         <i>expected</i> demand. Independent noise averages out; the shared common-mode does not.</li>
-        <li><b>Indivisible floor</b> = <code>1 + topShare(N)·(burst − 1)</code>, where
+        <li><b>Indivisible estimate</b> = <code>1 + topShare(N)·(burst − 1)</code>, where
         <code>topShare(N)</code> is the largest single workload's share of the total and <code>burst</code>
-        is one workload's own peak/mean. One tenant too big to split sets a floor on its own.</li>
+        is one workload's own peak/mean over the simulated day. It assumes the rest of the fleet is
+        near its mean when the largest workload peaks, so it is a heuristic pressure line rather than
+        a hard lower bound.</li>
       </ul>
-      <p>The achievable curve is <code>max(correlation-decay, indivisible floor)</code>.</p>
+      <p>The extrapolated curve is <code>max(correlation-decay, indivisible estimate)</code>.</p>
 
       <h4>Amortization with scale</h4>
       <p>Independent variation cancels as workloads stack, so the excess over the correlation floor decays
@@ -301,15 +308,16 @@ p ≈ 0.5 for light tails, smaller for heavy / size-skewed fleets</span>
       <ul>
         <li>Simulate a representative sample of <code>N_SAMPLE = 4096</code> workloads with a fixed seed.</li>
         <li>Measure peak/mean at growing counts, fit <code>C</code> and <code>p</code>, extrapolate to
-        <code>100M</code>.</li>
+        <code>100M</code>. When the selected fleet is within the 4096-workload sample, the status line
+        and marker use the exact simulated aggregate instead of the fit.</li>
         <li><code>topShare(N)</code> past the sample is extrapolated from the size tail index
         (<code>~ N^(1/αₛ − 1)</code>) — directional, a model, not a measurement.</li>
       </ul>
 
       <h4>Caveats</h4>
       <ul>
-        <li>Sizes are independent of shape; one synthetic day; no placement/bin-packing — just the
-        statistical limit.</li>
+        <li>Sizes are independent of shape; ticks are independent rather than long-lived sessions; one
+        synthetic day; no placement/bin-packing — just the statistical limit.</li>
         <li>Presets are illustrative parameter choices, not measured from real systems.</li>
       </ul>
 
@@ -319,7 +327,7 @@ p ≈ 0.5 for light tails, smaller for heavy / size-skewed fleets</span>
         <li><a href="https://en.wikipedia.org/wiki/Statistical_time-division_multiplexing" target="_blank" rel="noopener">Statistical multiplexing (Wikipedia)</a> — the pooling-gain idea: sharing capacity across bursty users beats static allocation.</li>
         <li><a href="https://en.wikipedia.org/wiki/Pareto_distribution" target="_blank" rel="noopener">Pareto distribution (Wikipedia)</a> — the heavy-tailed law behind both the bursts and the workload sizes here.</li>
         <li><a href="https://en.wikipedia.org/wiki/Central_limit_theorem" target="_blank" rel="noopener">Central limit theorem (Wikipedia)</a> — why independent variation averages out as <code>~1/√N</code> when you pool many workloads.</li>
-        <li><a href="https://en.wikipedia.org/wiki/Heavy-tailed_distribution" target="_blank" rel="noopener">Heavy-tailed distribution (Wikipedia)</a> — when variance is infinite (α&lt;2) the sum is dominated by its largest term, so it never averages out: the indivisible floor.</li>
+        <li><a href="https://en.wikipedia.org/wiki/Heavy-tailed_distribution" target="_blank" rel="noopener">Heavy-tailed distribution (Wikipedia)</a> — when variance is infinite (α&lt;2) the largest terms can dominate practical fleet sizes and convergence is slower than <code>1/√N</code>.</li>
         <li><a href="https://dl.acm.org/doi/10.1109/90.282603" target="_blank" rel="noopener">Leland, Taqqu, Willinger &amp; Wilson, "On the Self-Similar Nature of Ethernet Traffic" (1994)</a> — empirical evidence that real traffic really is bursty and heavy-tailed.</li>
       </ul>
     </div>
@@ -378,7 +386,7 @@ function simulate(){
 
   // Workload SIZES: power-law (Pareto) when skewed; equal when not. The tail
   // index sets how a single elephant's share shrinks with fleet size — and thus
-  // how slowly the fleet can average it out (the indivisible / hot-shard floor).
+  // how slowly the fleet can average it out (the indivisible / hot-shard estimate).
   const skew=P.sizeskew, sized=skew>1e-6;
   const aS = sized ? 1.06 + 2.6*(1-skew) : Infinity;   // ~3.66 (mild) → 1.06 (extreme)
   const xmS = sized ? (aS-1)/aS : 1;
@@ -388,21 +396,23 @@ function simulate(){
   const sizes=new Float32Array(N_SAMPLE);        // per-workload size weight
   const sumDetU=new Float64Array(T);             // unweighted det → correlation floor
   const sumDet=new Float64Array(T), sumRes=new Float64Array(T);  // size-weighted → timeline
-  let sumWMax=0, wMax=0;
+  let sumBurst=0, wMax=0;
 
   for(let i=0;i<N_SAMPLE;i++){
     const w = sized ? pareto(rng,aS,xmS) : 1;    // size weight (mean ≈ 1)
     sizes[i]=w; if(w>wMax)wMax=w;
-    let mx=0;
+    let mx=0, meanD=0;
     for(let t=0;t<T;t++){
       const ind=pareto(rng,alpha,xm);
       let d=(1-rho)*ind + rho*com[t];
       const det=(1-rho)*1 + rho*com[t];
       if(d<0)d=0;
       series[i*T+t]=d; if(d>mx)mx=d;
+      meanD+=d;
       sumDetU[t]+=det; sumDet[t]+=w*det; sumRes[t]+=w*(d-det);
     }
-    sumWMax+=mx;
+    meanD/=T;
+    sumBurst+=meanD>0 ? mx/meanD : 1;
   }
 
   const e=new Float64Array(T), resShape=new Float64Array(T);
@@ -414,7 +424,7 @@ function simulate(){
   }
   meanPerW/=T; eUmean/=T;
   const corrFloor=eUpeak/eUmean;       // floor from correlated time-shape only
-  const avgWMax=sumWMax/N_SAMPLE;      // burst factor of a single workload
+  const avgBurst=sumBurst/N_SAMPLE;    // average single-workload peak/mean
   // size of the largest workload at fleet N, as a share of the total (mean=1).
   // calibrated off the sample's observed max so we don't need a Γ function.
   const gscale = sized ? wMax/Math.pow(N_SAMPLE,invA) : 1;
@@ -430,33 +440,48 @@ function simulate(){
   let p=0.5, C=Math.max(0,meas[0][1]-corrFloor);
   if(n>=3){const den=n*sxx-sx*sx; if(Math.abs(den)>1e-9){const slope=(n*sxy-sx*sy)/den; p=Math.max(0.05,-slope); C=Math.exp((sy-slope*sx)/n);}}
 
-  SIM={series,sizes,e,resShape,meanPerW,avgWMax,floorPM:corrFloor,sized,gscale,invA,meas,C,p};
+  SIM={series,sizes,e,resShape,meanPerW,avgBurst,floorPM:corrFloor,sized,gscale,invA,meas,C,p};
   derive();
 }
 
 // share of total demand held by the single largest workload at fleet size N
 function topShare(N){N=Math.max(1,N);
   return SIM.sized ? Math.min(1, SIM.gscale*Math.pow(N,SIM.invA)/N) : 1/N;}
-// floor set by that one indivisible workload — it can't be spread across the fleet
-function indivFloor(N){return 1 + topShare(N)*(SIM.avgWMax-1);}
-function curvePM(N){return Math.max(SIM.floorPM + SIM.C*Math.pow(Math.max(1,N),-SIM.p), indivFloor(N));}
+// finite-size estimate from one indivisible workload that can't be split
+function indivEstimate(N){return 1 + topShare(N)*(SIM.avgBurst-1);}
+function curvePM(N){return Math.max(SIM.floorPM + SIM.C*Math.pow(Math.max(1,N),-SIM.p), indivEstimate(N));}
+function peakMean(series){
+  let m=0,pk=0;
+  for(let t=0;t<T;t++){m+=series[t];if(series[t]>pk)pk=series[t];}
+  m/=T;
+  return m>0 ? pk/m : 1;
+}
 
 let VIEW=null;
 function derive(){
   const {e,resShape,floorPM,series,sizes}=SIM;
   const N=P.N, sN=Math.sqrt(N);
   const D=new Float64Array(T);
+  let currentTopShare;
   if(N<=N_SAMPLE){
     // Small fleet: sum the actual first N sampled workloads (size × shape).
     // The CLT decomposition below is a large-N approximation that decouples the
     // mean (∝ mean weight) from the fluctuation (∝ RMS weight), so under size
     // skew it manufactures a spurious bump at small N. At N=N_SAMPLE the exact
     // sum equals the CLT curve, so the two meet with no discontinuity.
-    for(let i=0;i<N;i++){const w=sizes[i],b=i*T;for(let t=0;t<T;t++)D[t]+=w*series[b+t];}
+    let sumW=0, maxW=0;
+    for(let i=0;i<N;i++){
+      const w=sizes[i],b=i*T;
+      sumW+=w; if(w>maxW)maxW=w;
+      for(let t=0;t<T;t++)D[t]+=w*series[b+t];
+    }
+    currentTopShare=sumW>0 ? maxW/sumW : 1;
   } else {
     for(let t=0;t<T;t++) D[t]=Math.max(0,N*e[t]+resShape[t]*sN);
+    currentTopShare=topShare(N);
   }
-  VIEW={D, floor:floorPM, N, curve:SIM.meas, fitC:SIM.C, fitP:SIM.p};
+  VIEW={D, floor:floorPM, N, curve:SIM.meas, fitC:SIM.C, fitP:SIM.p,
+    pm:N<=N_SAMPLE ? peakMean(D) : curvePM(N), topShare:currentTopShare};
   render();
 }
 
@@ -566,8 +591,8 @@ function drawAmort(){
   const cv=document.getElementById("amort"); const {ctx,w,h}=setup(cv);
   const padL=46,padR=14,padT=12,padB=24, x0=padL,x1=w-padR,y0=padT,y1=h-padB;
   const {curve,floor,fitC,fitP}=VIEW;
-  const pm1=curve[0][1];
-  let ymax=Math.min(pm1*1.1,6); if(ymax<floor*1.15)ymax=floor*1.3; ymax=Math.max(ymax,1.25);
+  const curveMax=curve.reduce((m,pt)=>Math.max(m,pt[1]),VIEW.pm||1);
+  let ymax=Math.min(curveMax*1.1,6); if(ymax<floor*1.15)ymax=floor*1.3; ymax=Math.max(ymax,1.25);
   const clip=v=>Math.min(v,ymax);
   const lmax=Math.log10(N_LIMIT);
   const X=n=>x0+(x1-x0)*Math.log10(Math.max(1,n))/lmax;
@@ -582,22 +607,22 @@ function drawAmort(){
   ctx.moveTo(x0,Y(floor));ctx.lineTo(x1,Y(floor));ctx.stroke();ctx.setLineDash([]);
   ctx.fillStyle=css("--red");ctx.textAlign="left";ctx.font="10px "+MONO;
   ctx.fillText("correlation floor "+floor.toFixed(2)+"×",x0+6,Y(floor)-4);
-  // indivisible floor — the single biggest workload can't be split across the fleet
+  // indivisible estimate — the single biggest workload can't be split across the fleet
   if(SIM.sized){
     ctx.strokeStyle=css("--amber");ctx.setLineDash([2,3]);ctx.lineWidth=1.3;ctx.beginPath();
     for(let j=0;j<=160;j++){const n=Math.pow(10,lmax*j/160);
-      const x=X(n),y=Y(clip(Math.max(1,indivFloor(n))));j?ctx.lineTo(x,y):ctx.moveTo(x,y);}
+      const x=X(n),y=Y(clip(Math.max(1,indivEstimate(n))));j?ctx.lineTo(x,y):ctx.moveTo(x,y);}
     ctx.stroke();ctx.setLineDash([]);
     ctx.fillStyle=css("--amber");ctx.textAlign="right";
-    ctx.fillText("indivisible",x1-4,Y(clip(indivFloor(N_LIMIT)))-4);ctx.textAlign="left";
+    ctx.fillText("indivisible",x1-4,Y(clip(indivEstimate(N_LIMIT)))-4);ctx.textAlign="left";
   }
-  // fitted model = max(correlation decay, indivisible floor)
+  // fitted model = max(correlation decay, indivisible estimate)
   ctx.strokeStyle=css("--purple");ctx.globalAlpha=.9;ctx.setLineDash([5,4]);ctx.lineWidth=1.5;ctx.beginPath();
   for(let j=0;j<=160;j++){const n=Math.pow(10,lmax*j/160);
     const x=X(n),y=Y(clip(Math.max(1,curvePM(n))));j?ctx.lineTo(x,y):ctx.moveTo(x,y);}
   ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
   // current N marker + (x, y) readout
-  const xn=X(VIEW.N), pmN=curvePM(VIEW.N), yN=Y(clip(pmN));
+  const xn=X(VIEW.N), pmN=VIEW.pm, yN=Y(clip(pmN));
   ctx.strokeStyle=css("--grey");ctx.lineWidth=1.4;ctx.beginPath();
   ctx.moveTo(xn,y0);ctx.lineTo(xn,y1);ctx.stroke();
   ctx.fillStyle=css("--grey");ctx.beginPath();ctx.arc(xn,yN,3,0,7);ctx.fill();
@@ -619,12 +644,12 @@ function drawAmort(){
 // Command line + status line (reflect live params)
 //============================================================================
 function updateStatus(){
-  const pm=curvePM(P.N), floor=SIM.floorPM, util=100/pm;
+  const pm=VIEW.pm, floor=SIM.floorPM, util=100/pm, top=VIEW.topShare;
   document.getElementById("st-n").textContent=fmtN(P.N);
   document.getElementById("st-pm").textContent=pm.toFixed(2)+"×";
   document.getElementById("st-floor").textContent=floor.toFixed(2)+"×";
   document.getElementById("st-util").textContent=util.toFixed(0)+"%";
-  document.getElementById("st-top").textContent=(topShare(P.N)*100).toFixed(topShare(P.N)<0.1?1:0)+"%";
+  document.getElementById("st-top").textContent=(top*100).toFixed(top<0.1?1:0)+"%";
 }
 
 //============================================================================
@@ -698,11 +723,11 @@ const PRESETS=[
    blurb:"all your tenants peak in the same business hours → a correlation floor scale can't remove (~1.8×)",
    p:{rho:0.10,spikiness:0.60,sizeskew:0.40,N:20000}},
   {name:"one whale tenant",
-   blurb:"one customer dwarfs the rest and can't be spread across nodes → ~2.2× however big the fleet",
-   p:{rho:0.03,spikiness:0.50,sizeskew:0.85,N:1500}},
+   blurb:"one customer dwarfs the sampled fleet and can't be split across nodes → ~2.7× until it is isolated or sharded",
+   p:{rho:0.03,spikiness:0.50,sizeskew:0.85,N:4096}},
   {name:"too few tenants",
    blurb:"a handful of big customers — not enough to average, one bad hour dominates (~5×)",
-   p:{rho:0.02,spikiness:0.60,sizeskew:0.60,N:12}},
+   p:{rho:0.02,spikiness:0.95,sizeskew:0.60,N:12}},
 ];
 function applyPreset(p){
   Object.assign(P,p);
