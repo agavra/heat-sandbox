@@ -350,7 +350,11 @@ const N_LIMIT=1e8;
 function simulate(){
   const rng=mulberry32(P.seed>>>0);
   const rho=P.rho;
-  const alpha=1.3+(1-P.spikiness)*1.7;
+  // Tail index: spikiness=1 → heavy tail (α≈1.3, tall rare bursts). The (1-s)^8
+  // term leaves the mid/high range as-is but makes α shoot up as s→0, so 0%
+  // spiky is genuinely steady (α≈73 → peaks within ~8% of mean) instead of the
+  // α=3 tail that still threw ~4× spikes.
+  const s=P.spikiness, alpha=1.3+1.7*(1-s)+70*Math.pow(1-s,8);
   const xm=(alpha-1)/alpha;
 
   // shared common-mode burst signal (heavy-tailed); rho mixes it into each
@@ -424,10 +428,19 @@ function curvePM(N){return Math.max(SIM.floorPM + SIM.C*Math.pow(Math.max(1,N),-
 
 let VIEW=null;
 function derive(){
-  const {e,resShape,floorPM}=SIM;
+  const {e,resShape,floorPM,series,sizes}=SIM;
   const N=P.N, sN=Math.sqrt(N);
   const D=new Float64Array(T);
-  for(let t=0;t<T;t++) D[t]=Math.max(0,N*e[t]+resShape[t]*sN);
+  if(N<=N_SAMPLE){
+    // Small fleet: sum the actual first N sampled workloads (size × shape).
+    // The CLT decomposition below is a large-N approximation that decouples the
+    // mean (∝ mean weight) from the fluctuation (∝ RMS weight), so under size
+    // skew it manufactures a spurious bump at small N. At N=N_SAMPLE the exact
+    // sum equals the CLT curve, so the two meet with no discontinuity.
+    for(let i=0;i<N;i++){const w=sizes[i],b=i*T;for(let t=0;t<T;t++)D[t]+=w*series[b+t];}
+  } else {
+    for(let t=0;t<T;t++) D[t]=Math.max(0,N*e[t]+resShape[t]*sN);
+  }
   VIEW={D, floor:floorPM, N, curve:SIM.meas, fitC:SIM.C, fitP:SIM.p};
   render();
 }
