@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>heat-amortization — statistical multiplexing sandbox</title>
+<style>
+  :root{
+    --bg:#f8f8f4; --bg2:#efefe7; --panel:#fcfcf7; --line:#e0e0d4; --line2:#cacaba;
+    --text:#1f2328; --dim:#6e6e63; --faint:#9c9c8d;
+    --accent:#2b6cb0; --accent-deep:#1d4f85; --accent-soft:#8aa9c8;
+    --green:#4f7a3f; --amber:#97650a; --red:#b23a2a; --purple:#6d57a0; --grey:#a3a094;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,"JetBrains Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);
+    font:12px/1.5 var(--mono);-webkit-font-smoothing:antialiased}
+  body{padding-bottom:34px}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px dotted var(--accent-soft)}
+  a:hover{border-bottom-style:solid}
+
+  /* ---- header + live command line ---- */
+  header{border-bottom:1px solid var(--line2);background:var(--panel);padding:15px 0 13px}
+  .inner{max-width:1000px;margin:0 auto;padding:0 18px}
+  .head{display:flex;align-items:center;gap:9px}
+  .head .ttl{font-size:19px;font-weight:650;color:var(--text);letter-spacing:.01em}
+  .cmd{margin-top:9px;font-size:12.5px;color:var(--text);white-space:nowrap;
+    overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .cmd .p{color:var(--green)} .cmd .f{color:var(--purple)} .cmd .vv{color:var(--accent)}
+  /* (?) description tooltip */
+  .help{position:relative;flex:0 0 auto;width:17px;height:17px;border:1px solid var(--line2);
+    border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+    font-size:11px;color:var(--dim);cursor:help;background:var(--bg)}
+  .help:hover,.help:focus{color:var(--text);border-color:var(--accent);outline:none}
+  .help .tip{position:absolute;left:-2px;top:140%;width:min(460px,82vw);z-index:30;
+    background:var(--panel);border:1px solid var(--line2);padding:11px 13px;
+    font-size:11px;line-height:1.6;color:var(--dim);font-weight:400;cursor:auto;
+    box-shadow:0 6px 18px rgba(0,0,0,.09);display:none;text-align:left}
+  .help .tip b{color:var(--text);font-weight:600}
+  .help:hover .tip,.help:focus .tip{display:block}
+
+  /* ---- blog-style centered column ---- */
+  .page{max-width:1000px;margin:0 auto;padding:18px}
+
+  /* ---- parameters bar (on top) ---- */
+  .ctlgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));
+    gap:14px 22px;align-items:start}
+  .contents{display:contents}
+  .cell .celltitle{font-size:11px;color:var(--text);margin:0 0 7px;font-weight:600}
+  .cell .celltitle::before{content:"# ";color:var(--faint)}
+
+  /* ---- control sections ---- */
+  .toggle{display:flex;border:1px solid var(--line2);background:var(--bg2);margin:0}
+  .toggle button{flex:1;background:transparent;border:0;color:var(--dim);
+    padding:8px 6px;cursor:pointer;font:inherit;font-size:12px}
+  .toggle button+button{border-left:1px solid var(--line2)}
+  .toggle button:hover{color:var(--text)}
+  .toggle button.active{background:var(--text);color:var(--bg)}
+  .hint{color:var(--dim);font-size:10.3px;line-height:1.5;margin:6px 0 0}
+  .hint::before{content:"// ";color:var(--faint)}
+  .ctl{margin:0}
+  .ctl label{display:flex;justify-content:space-between;align-items:baseline;
+    font-size:11.5px;margin-bottom:5px;gap:8px}
+  .ctl .flag{color:var(--purple)}
+  .ctl .v{color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums}
+  .ctl input[type=range]{width:100%;accent-color:var(--accent);height:20px;margin:0;cursor:pointer}
+
+  /* ---- panels: square TUI frame + cut-in title ---- */
+  .panel{background:var(--panel);border:1px solid var(--line2);padding:15px 14px 13px;
+    margin-bottom:16px;position:relative}
+  .panel>.ptitle{position:absolute;top:-.72em;left:11px;background:var(--bg);
+    padding:0 7px;font-size:11.5px;font-weight:600;color:var(--text);white-space:nowrap}
+  .panel>.ptitle::before{content:"▌ ";color:var(--accent)}
+  .panel .sub{color:var(--dim);font-size:10.8px;margin:0 0 9px;line-height:1.5}
+  .panel .sub b{color:var(--text);font-weight:600}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  canvas{width:100%;display:block}
+  .legend{display:flex;flex-wrap:wrap;gap:7px 14px;font-size:10.3px;color:var(--dim);margin-top:8px}
+  .legend b{font-weight:400}
+  code{background:var(--bg2);padding:1px 4px;border:1px solid var(--line);font-size:10.5px}
+
+  /* ---- ascii sparkline grid ---- */
+  #grid{display:grid;gap:10px;height:286px;overflow-y:auto;align-content:start;
+    padding-right:2px}
+  .sptile{display:flex;align-items:center;gap:7px;overflow:hidden;white-space:nowrap;
+    background:var(--bg2);border:1px solid var(--line);padding:4px 7px}
+  .sptile .lab{color:var(--faint);font-size:10.5px;flex:0 0 auto;font-variant-numeric:tabular-nums}
+  .sptile .sp{font-size:12px;line-height:1;letter-spacing:0;overflow:hidden;flex:1 1 auto}
+  .sptile.more{color:var(--dim);font-size:10.5px;justify-content:center;background:transparent;
+    border-style:dashed}
+  .sp i{font-style:normal}
+  .sp .b0{color:var(--faint)} .sp .b1{color:var(--accent-soft)} .sp .b2{color:var(--accent)}
+  .sp .b3{color:var(--accent-deep)} .sp .b4{color:var(--red)}
+
+  /* ---- status line (tmux-style) ---- */
+  .status{position:fixed;left:0;right:0;bottom:0;display:flex;flex-wrap:wrap;gap:0 20px;
+    background:var(--text);color:var(--bg);font-size:11px;z-index:20;
+    padding:6px max(14px,calc((100% - 1000px)/2 + 18px));border-top:1px solid var(--text)}
+  .status b{font-weight:600;color:#e8c477}
+  .status .sep{color:var(--grey)}
+
+  @media (max-width:760px){
+    .row2{grid-template-columns:1fr;gap:0}
+    .page{padding:14px 12px 20px}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="inner">
+    <div class="head">
+      <span class="ttl">heat-amortization — statistical multiplexing sandbox</span>
+      <span class="help" tabindex="0">?<span class="tip">When does a fleet of spiky workloads
+        "balance itself out"? Two things decide it: how <b>correlated</b> the workloads are, and how
+        <b>many</b> share the fleet. Independent spikes cancel as you add workloads; a shared daily cycle
+        stacks up no matter the scale. Inspired by the
+        <a href="https://www.allthingsdistributed.com/2023/07/building-and-operating-a-pretty-big-storage-system.html" target="_blank" rel="noopener">"managing heat"</a>
+        section of Andy Warfield's S3 post.</span></span>
+    </div>
+    <div class="cmd" id="cmd"></div>
+  </div>
+</header>
+
+<div class="page">
+  <div class="panel">
+    <div class="ptitle">parameters</div>
+    <div class="ctlgrid">
+      <div class="cell">
+        <div class="celltitle">workload type</div>
+        <div class="toggle" id="modeToggle"></div>
+      </div>
+      <div id="corrSection" class="contents">
+        <div class="cell">
+          <div id="corrCtl"></div>
+          <p class="hint">0% = each workload spikes on its own schedule · 100% = all spike together.</p>
+        </div>
+        <div class="cell">
+          <div id="spikeCtl"></div>
+          <p class="hint">higher = rarer but taller bursts (heavier tail); lower = gentle, frequent bumps.</p>
+        </div>
+      </div>
+      <div id="phaseSection" class="contents">
+        <div class="cell">
+          <div id="phaseCtl"></div>
+          <p class="hint">0% = every cycle peaks at the same hour · 100% = peaks spread around the clock.</p>
+        </div>
+        <div class="cell">
+          <div id="ampvarCtl"></div>
+          <p class="hint">0% = same daily swing for all · 100% = swings vary widely (some flat, some huge).</p>
+        </div>
+      </div>
+      <div class="cell">
+        <div id="fleetCtls"></div>
+      </div>
+    </div>
+  </div>
+
+    <div class="panel">
+      <div class="ptitle">individual workloads</div>
+      <p class="sub">Each row is one workload (first <b id="nshow"></b> of <b id="ntot"></b>), drawn as a
+      block sparkline over one day. Shared scale <span id="capy"></span>; taller block = more demand.
+      These series sum into the aggregate below.</p>
+      <div id="grid"></div>
+      <div class="legend">
+        <span><span class="sp"><i class="b0">▁</i></span> low</span>
+        <span><span class="sp"><i class="b2">▄</i></span> ~mean (1×)</span>
+        <span><span class="sp"><i class="b3">▇</i></span> high</span>
+        <span><span class="sp"><i class="b4">█</i></span> peak (≥ cap)</span>
+      </div>
+    </div>
+
+    <div class="row2">
+      <div class="panel">
+        <div class="ptitle">aggregate D(t) — one day</div>
+        <p class="sub">Total demand summed across all workloads at fleet size <b id="nlabel"></b>.</p>
+        <canvas id="timeline" data-h="190"></canvas>
+        <div class="legend">
+          <span><b style="color:var(--accent)">───</b> actual demand D(t)</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="ptitle">peak / mean vs. fleet size</div>
+        <p class="sub">How burstiness collapses as workloads stack, out to 100M. Solid = simulated;
+        dashed = fitted <code>floor + C·N⁻ᵖ</code> (p≈0.5 light tails, slower for heavy Pareto). The
+        <b>floor</b> is the correlated burstiness no scale removes.</p>
+        <canvas id="amort" data-h="190"></canvas>
+        <div class="legend">
+          <span><b style="color:var(--accent)">───</b> simulated</span>
+          <span><b style="color:var(--purple)">╌╌</b> fitted → 100M</span>
+          <span><b style="color:var(--red)">╌╌</b> floor</span>
+          <span><b style="color:var(--grey)">│</b> current N</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<footer class="status" id="status">
+  <span>mode=<b id="st-mode">spiky</b></span>
+  <span>N=<b id="st-n">256</b></span>
+  <span>peak/mean=<b id="st-pm">—</b></span>
+  <span>floor=<b id="st-floor">—</b></span>
+  <span>achievable_util≈<b id="st-util">—</b></span>
+</footer>
+
+<script>
+//============================================================================
+// Model parameters & UI definitions  (simulation math unchanged)
+//============================================================================
+const T = 240;           // ticks per day
+const N_MAX = 4096;      // largest fleet actually simulated
+const MONO = 'ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace';
+
+const P = {
+  mode:"spiky",          // "spiky" | "sine"
+  rho:0.0, spikiness:0.7,// [spiky] correlation, tail heaviness
+  spread:0.0, ampvar:0.0,// [sine] phase spread, amplitude spread
+  amp:0.9, N:256, seed:7,
+};
+
+const SLIDERS = {
+  corr:  [["rho","--corr",0,1,0.02]],
+  spike: [["spikiness","--spikiness",0,1,0.02]],
+  phase: [["spread","--phase-spread",0,1,0.02]],
+  ampvar:[["ampvar","--amp-var",0,1,0.02]],
+};
+
+//============================================================================
+// Seeded RNG + Pareto draw
+//============================================================================
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function pareto(rng,alpha,xm){ return xm/Math.pow(rng(),1/alpha); }
+
+//============================================================================
+// Simulation: simulate a representative SAMPLE of workloads, then scale the
+// aggregate analytically so the fleet can grow to N_LIMIT without simulating
+// every workload.
+//============================================================================
+let SIM=null;
+const N_SAMPLE=N_MAX;
+const N_LIMIT=1e8;
+
+function simulate(){
+  const rng=mulberry32(P.seed>>>0);
+  const TWO_PI=2*Math.PI, spiky=(P.mode==="spiky");
+  const rho=P.rho, amp=P.amp, spread=P.spread, ampvar=P.ampvar;
+  const alpha=1.3+(1-P.spikiness)*1.7;
+  const xm=(alpha-1)/alpha;
+
+  let com=null;
+  if(spiky){ com=new Float64Array(T); for(let t=0;t<T;t++) com[t]=pareto(rng,alpha,xm); }
+  const phaseAvgCos=theta=>{ if(spread<1e-6)return Math.cos(theta);
+    const wdt=spread*TWO_PI; return (Math.sin(theta+wdt)-Math.sin(theta))/wdt; };
+
+  const series=new Float32Array(N_SAMPLE*T);
+  const sumDet=new Float64Array(T), sumRes=new Float64Array(T), sumRes2=new Float64Array(T);
+  let sumWMax=0;
+
+  for(let i=0;i<N_SAMPLE;i++){
+    const phi=spread*TWO_PI*rng();
+    const A=Math.max(0,Math.min(0.99, amp*(1+ampvar*(2*rng()-1))));
+    let mx=0;
+    for(let t=0;t<T;t++){
+      const theta=TWO_PI*t/T;
+      let d,det;
+      if(spiky){
+        const ind=pareto(rng,alpha,xm);
+        d=(1-rho)*ind + rho*com[t];
+        det=(1-rho)*1 + rho*com[t];
+      }else{
+        d=1 - A*Math.cos(theta+phi);
+        det=1 - amp*phaseAvgCos(theta);
+      }
+      if(d<0)d=0;
+      series[i*T+t]=d; if(d>mx)mx=d;
+      const r=d-det; sumDet[t]+=det; sumRes[t]+=r; sumRes2[t]+=r*r;
+    }
+    sumWMax+=mx;
+  }
+
+  const e=new Float64Array(T), vr=new Float64Array(T), resShape=new Float64Array(T);
+  let meanPerW=0, floorPeak=0;
+  for(let t=0;t<T;t++){
+    e[t]=sumDet[t]/N_SAMPLE; vr[t]=Math.max(0,sumRes2[t]/N_SAMPLE);
+    resShape[t]=sumRes[t]/Math.sqrt(N_SAMPLE);
+    meanPerW+=e[t]; if(e[t]>floorPeak)floorPeak=e[t];
+  }
+  meanPerW/=T;
+  const floorPM=floorPeak/meanPerW;
+  const avgWMax=sumWMax/N_SAMPLE;
+
+  const checks=[]; for(let k=1;k<=N_SAMPLE;k=Math.max(k+1,Math.round(k*1.6))) checks.push(Math.min(k,N_SAMPLE));
+  const aggC=new Float64Array(T); let ci=0; const meas=[];
+  for(let i=0;i<N_SAMPLE;i++){
+    for(let t=0;t<T;t++)aggC[t]+=series[i*T+t];
+    if(i+1===checks[ci]){let m=0,pk=0;for(let t=0;t<T;t++){m+=aggC[t];if(aggC[t]>pk)pk=aggC[t];}m/=T;meas.push([i+1,pk/m]);ci++;}
+  }
+  let sx=0,sy=0,sxx=0,sxy=0,n=0;
+  for(const [N,pm] of meas){const ex=pm-floorPM; if(N>=8 && ex>1e-3){const x=Math.log(N),y=Math.log(ex);sx+=x;sy+=y;sxx+=x*x;sxy+=x*y;n++;}}
+  let p=0.5, C=Math.max(0,meas[0][1]-floorPM);
+  if(n>=3){const den=n*sxx-sx*sx; if(Math.abs(den)>1e-9){const slope=(n*sxy-sx*sy)/den; p=Math.max(0.05,-slope); C=Math.exp((sy-slope*sx)/n);}}
+
+  SIM={series,e,vr,resShape,meanPerW,avgWMax,floorPM,meas,C,p};
+  derive();
+}
+
+function curvePM(N){return SIM.floorPM + SIM.C*Math.pow(Math.max(1,N),-SIM.p);}
+
+let VIEW=null;
+function derive(){
+  const {e,resShape,floorPM}=SIM;
+  const N=P.N, sN=Math.sqrt(N);
+  const D=new Float64Array(T);
+  for(let t=0;t<T;t++) D[t]=Math.max(0,N*e[t]+resShape[t]*sN);
+  VIEW={D, floor:floorPM, N, curve:SIM.meas, fitC:SIM.C, fitP:SIM.p};
+  render();
+}
+
+//============================================================================
+// Canvas helpers
+//============================================================================
+function setup(cv){
+  const dpr=window.devicePixelRatio||1;
+  const h=+cv.dataset.h;
+  const w=cv.clientWidth||cv.parentElement.clientWidth;
+  cv.style.height=h+"px";
+  cv.width=Math.max(1,Math.round(w*dpr)); cv.height=Math.round(h*dpr);
+  const ctx=cv.getContext("2d");
+  ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
+  return {ctx,w,h};
+}
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+function gridY(ctx,x0,x1,y,label,col){
+  ctx.strokeStyle=css("--line");ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x0,y);ctx.lineTo(x1,y);ctx.stroke();
+  if(label){ctx.fillStyle=col||css("--dim");ctx.font="10px "+MONO;
+    ctx.textAlign="right";ctx.fillText(label,x0-6,y+3);}
+}
+
+//============================================================================
+// ASCII block-sparkline grid (replaces the old canvas grid)
+//============================================================================
+const BLK=[" ","▁","▂","▃","▄","▅","▆","▇","█"];
+const GAP=10;
+let _mc=null;
+function charW(){
+  if(!_mc)_mc=document.createElement("canvas").getContext("2d");
+  _mc.font="12px "+MONO;
+  return _mc.measureText("0000000000").width/10;
+}
+function blkLevel(v,cap){const l=Math.round(v/cap*8);return l<0?0:l>8?8:l;}
+function blkClass(l){return l<=1?0:l<=3?1:l<=5?2:l<=7?3:4;}
+function sparkline(series,i,COLS,cap){
+  const base=i*T, bw=T/COLS;
+  let out="",curCls=-1,run="";
+  for(let c=0;c<COLS;c++){
+    const t0=Math.floor(c*bw), t1=Math.max(t0+1,Math.floor((c+1)*bw));
+    let s=0,cnt=0; for(let t=t0;t<t1&&t<T;t++){s+=series[base+t];cnt++;}
+    const v=cnt?s/cnt:0, l=blkLevel(v,cap), cls=blkClass(l);
+    if(cls!==curCls){if(run)out+=`<i class="b${curCls}">${run}</i>`;run="";curCls=cls;}
+    run+=BLK[l];
+  }
+  if(run)out+=`<i class="b${curCls}">${run}</i>`;
+  return out;
+}
+function drawIndividuals(){
+  const host=document.getElementById("grid"), N=P.N, {series}=SIM;
+  const CAP=24, ell=N>CAP, shown=ell?CAP-1:N;
+  const W=host.clientWidth||host.parentElement.clientWidth;
+  const cw=charW();
+  const cols=Math.max(1,Math.min(6,Math.floor(W/210)));
+  const tileW=(W-(cols-1)*GAP)/cols;
+  const COLS=Math.max(12,Math.min(72,Math.floor((tileW-4*cw-22)/cw)));
+
+  const samp=[];
+  for(let i=0;i<shown;i++)for(let t=0;t<T;t+=3)samp.push(series[i*T+t]);
+  samp.sort((a,b)=>a-b);
+  const capY=Math.min(10,Math.max(2.2,(samp[Math.floor(samp.length*0.97)]||3)*1.08));
+
+  let html="";
+  for(let i=0;i<shown;i++)
+    html+=`<div class="sptile"><span class="lab">w${String(i).padStart(2,"0")}</span><span class="sp">${sparkline(series,i,COLS,capY)}</span></div>`;
+  if(ell)html+=`<div class="sptile more">+ ${(N-shown).toLocaleString()} more workloads …</div>`;
+  host.style.gridTemplateColumns=`repeat(${cols},1fr)`;
+  host.innerHTML=html;
+
+  document.getElementById("nshow").textContent=shown.toLocaleString();
+  document.getElementById("ntot").textContent=N.toLocaleString();
+  document.getElementById("capy").textContent="0–"+capY.toFixed(1)+"×";
+}
+
+//============================================================================
+// Aggregate timeline (canvas)
+//============================================================================
+function drawTimeline(){
+  const cv=document.getElementById("timeline"); const {ctx,w,h}=setup(cv);
+  const padL=54,padR=14,padT=12,padB=24, x0=padL,x1=w-padR,y0=padT,y1=h-padB;
+  const {D:agg}=VIEW;
+  let dmax=0; for(let t=0;t<T;t++) if(agg[t]>dmax)dmax=agg[t];
+  let ymax=(dmax*1.1)||1;
+  const X=t=>x0+(x1-x0)*t/(T-1), Y=v=>y1-(y1-y0)*v/ymax;
+  const fmtAx=v=>v>=1e6?(v/1e6).toFixed(1)+"M":v>=1e3?(v/1e3).toFixed(0)+"K":Math.round(v).toString();
+  for(let g=0;g<=4;g++){const v=ymax*g/4; gridY(ctx,x0,x1,Y(v),fmtAx(v));}
+  // area fill under the curve
+  ctx.beginPath();
+  for(let t=0;t<T;t++){const x=X(t),y=Y(agg[t]);t?ctx.lineTo(x,y):ctx.moveTo(x,y);}
+  ctx.lineTo(X(T-1),y1);ctx.lineTo(X(0),y1);ctx.closePath();
+  ctx.fillStyle=css("--accent");ctx.globalAlpha=.07;ctx.fill();ctx.globalAlpha=1;
+  // demand line
+  ctx.strokeStyle=css("--accent");ctx.lineWidth=1.8;ctx.beginPath();
+  for(let t=0;t<T;t++){const x=X(t),y=Y(agg[t]);t?ctx.lineTo(x,y):ctx.moveTo(x,y);}ctx.stroke();
+  // x labels (hours)
+  ctx.fillStyle=css("--dim");ctx.font="10px "+MONO;ctx.textAlign="center";
+  for(let hI=0;hI<=24;hI+=6){const t=hI/24*(T-1);ctx.fillText(hI+"h",X(t),h-7);}
+}
+
+//============================================================================
+// Amortization curve (canvas)
+//============================================================================
+function drawAmort(){
+  const cv=document.getElementById("amort"); const {ctx,w,h}=setup(cv);
+  const padL=46,padR=14,padT=12,padB=24, x0=padL,x1=w-padR,y0=padT,y1=h-padB;
+  const {curve,floor,fitC,fitP}=VIEW;
+  const pm1=curve[0][1];
+  let ymax=Math.min(pm1*1.1,6); if(ymax<floor*1.15)ymax=floor*1.3; ymax=Math.max(ymax,1.25);
+  const clip=v=>Math.min(v,ymax);
+  const lmax=Math.log10(N_LIMIT);
+  const X=n=>x0+(x1-x0)*Math.log10(Math.max(1,n))/lmax;
+  const Y=v=>y1-(y1-y0)*(v-1)/(ymax-1);
+  for(let g=0;g<=4;g++){const v=1+(ymax-1)*g/4; gridY(ctx,x0,x1,Y(v),v.toFixed(1)+"×");}
+  ctx.font="9px "+MONO;ctx.textAlign="center";
+  [[1,"1"],[100,"100"],[1e4,"10K"],[1e6,"1M"],[1e8,"100M"]].forEach(([n,lab])=>{
+    const x=X(n);ctx.strokeStyle=css("--line");ctx.beginPath();ctx.moveTo(x,y0);ctx.lineTo(x,y1);ctx.stroke();
+    ctx.fillStyle=css("--dim");ctx.fillText(lab,x,h-7);});
+  // floor
+  ctx.strokeStyle=css("--red");ctx.setLineDash([4,4]);ctx.lineWidth=1.3;ctx.beginPath();
+  ctx.moveTo(x0,Y(floor));ctx.lineTo(x1,Y(floor));ctx.stroke();ctx.setLineDash([]);
+  ctx.fillStyle=css("--red");ctx.textAlign="left";ctx.font="10px "+MONO;
+  ctx.fillText("floor "+floor.toFixed(2)+"×",x0+6,Y(floor)-4);
+  // fitted decay
+  ctx.strokeStyle=css("--purple");ctx.globalAlpha=.9;ctx.setLineDash([5,4]);ctx.lineWidth=1.5;ctx.beginPath();
+  for(let j=0;j<=160;j++){const n=Math.pow(10,lmax*j/160);const v=floor+fitC*Math.pow(n,-fitP);
+    const x=X(n),y=Y(clip(Math.max(1,v)));j?ctx.lineTo(x,y):ctx.moveTo(x,y);}
+  ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
+  // current N marker + (x, y) readout
+  const xn=X(VIEW.N), pmN=curvePM(VIEW.N), yN=Y(clip(pmN));
+  ctx.strokeStyle=css("--grey");ctx.lineWidth=1.4;ctx.beginPath();
+  ctx.moveTo(xn,y0);ctx.lineTo(xn,y1);ctx.stroke();
+  ctx.fillStyle=css("--grey");ctx.beginPath();ctx.arc(xn,yN,3,0,7);ctx.fill();
+  const tag=`(${fmtN(VIEW.N)}, ${pmN.toFixed(2)}×)`;
+  ctx.font="10px "+MONO; const tw=ctx.measureText(tag).width, pad=4;
+  let tx=Math.max(x0+1,Math.min(xn-tw/2,x1-tw-2*pad-1));
+  ctx.fillStyle=css("--panel");ctx.fillRect(tx-pad,y0+1,tw+2*pad,14);
+  ctx.strokeStyle=css("--line2");ctx.lineWidth=1;ctx.strokeRect(tx-pad,y0+1,tw+2*pad,14);
+  ctx.fillStyle=css("--text");ctx.textAlign="left";ctx.textBaseline="middle";
+  ctx.fillText(tag,tx,y0+8.5);ctx.textBaseline="alphabetic";
+  // measured points
+  ctx.strokeStyle=css("--accent");ctx.lineWidth=2;ctx.beginPath();
+  curve.forEach(([n,v],k)=>{const x=X(n),y=Y(clip(v));k?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();
+  ctx.fillStyle=css("--accent");
+  curve.forEach(([n,v])=>{const x=X(n),y=Y(clip(v));ctx.beginPath();ctx.arc(x,y,2,0,7);ctx.fill();});
+}
+
+//============================================================================
+// Command line + status line (reflect live params)
+//============================================================================
+function updateCmd(){
+  const f = P.mode==="spiky"
+    ? `<span class="f">--corr</span>=<span class="vv">${P.rho.toFixed(2)}</span> <span class="f">--spikiness</span>=<span class="vv">${P.spikiness.toFixed(2)}</span>`
+    : `<span class="f">--phase-spread</span>=<span class="vv">${P.spread.toFixed(2)}</span> <span class="f">--amp-var</span>=<span class="vv">${P.ampvar.toFixed(2)}</span>`;
+  document.getElementById("cmd").innerHTML =
+    `<span class="f">--mode</span>=<span class="vv">${P.mode}</span> ${f} <span class="f">--fleet</span>=<span class="vv">${fmtN(P.N)}</span>`;
+}
+function updateStatus(){
+  const pm=curvePM(P.N), floor=SIM.floorPM, util=100/pm;
+  document.getElementById("st-mode").textContent=P.mode;
+  document.getElementById("st-n").textContent=fmtN(P.N);
+  document.getElementById("st-pm").textContent=pm.toFixed(2)+"×";
+  document.getElementById("st-floor").textContent=floor.toFixed(2)+"×";
+  document.getElementById("st-util").textContent=util.toFixed(0)+"%";
+}
+
+//============================================================================
+// Render
+//============================================================================
+function render(){
+  syncNLabel(); updateCmd(); updateStatus();
+  drawIndividuals(); drawTimeline(); drawAmort();
+}
+
+//============================================================================
+// Build controls
+//============================================================================
+function fmt(id,val){
+  if(["rho","spread","spikiness","ampvar"].includes(id))return Math.round(val*100)+"%";
+  return (val%1===0)?val.toString():val.toFixed(2);
+}
+function makeSlider(parent,[id,label,min,max,step]){
+  const wrap=document.createElement("div");wrap.className="ctl";
+  const lab=document.createElement("label");
+  lab.innerHTML=`<span class="flag">${label}</span><span class="v" id="v_${id}">${fmt(id,P[id])}</span>`;
+  const inp=document.createElement("input");
+  inp.type="range";inp.min=min;inp.max=max;inp.step=step;inp.value=P[id];inp.id="s_"+id;
+  inp.addEventListener("input",()=>{
+    P[id]=parseFloat(inp.value);
+    document.getElementById("v_"+id).textContent=fmt(id,P[id]);
+    schedule(id);
+  });
+  wrap.appendChild(lab);wrap.appendChild(inp);parent.appendChild(wrap);
+}
+
+function fmtN(n){
+  if(n>=1e6)return (n/1e6).toFixed(n>=1e7?0:1).replace(/\.0$/,"")+"M";
+  if(n>=1e3)return (n/1e3).toFixed(n>=1e4?0:1).replace(/\.0$/,"")+"K";
+  return Math.round(n).toString();
+}
+const N_EXP=Math.log10(N_LIMIT);
+function nToSlider(n){return Math.round(Math.log10(Math.max(1,n))/N_EXP*1000);}
+function makeLogN(parent){
+  const wrap=document.createElement("div");wrap.className="ctl";
+  const lab=document.createElement("label");
+  lab.innerHTML=`<span class="flag">--fleet</span><span class="v" id="v_N">${fmtN(P.N)}</span>`;
+  const inp=document.createElement("input");
+  inp.type="range";inp.min=0;inp.max=1000;inp.step=1;inp.id="s_N";inp.value=nToSlider(P.N);
+  inp.addEventListener("input",()=>{
+    P.N=Math.max(1,Math.min(N_LIMIT,Math.round(Math.pow(10,inp.value/1000*N_EXP))));
+    document.getElementById("v_N").textContent=fmtN(P.N); schedule("N");
+  });
+  wrap.appendChild(lab);wrap.appendChild(inp);parent.appendChild(wrap);
+  const h=document.createElement("p");h.className="hint";h.textContent="log scale, 1 → 100M.";
+  parent.appendChild(h);
+}
+
+const VIEW_ONLY=new Set(["N"]);
+let raf=null,needSim=false;
+function schedule(id){
+  if(!VIEW_ONLY.has(id))needSim=true;
+  if(raf)return;
+  raf=requestAnimationFrame(()=>{raf=null; if(needSim){needSim=false;simulate();}else{derive();}});
+}
+
+function buildUI(){
+  SLIDERS.corr.forEach(s=>makeSlider(document.getElementById("corrCtl"),s));
+  SLIDERS.spike.forEach(s=>makeSlider(document.getElementById("spikeCtl"),s));
+  SLIDERS.phase.forEach(s=>makeSlider(document.getElementById("phaseCtl"),s));
+  SLIDERS.ampvar.forEach(s=>makeSlider(document.getElementById("ampvarCtl"),s));
+  makeLogN(document.getElementById("fleetCtls"));
+
+  const mt=document.getElementById("modeToggle");
+  [["spiky","spiky"],["sine","sinusoidal"]].forEach(([m,lab])=>{
+    const b=document.createElement("button");b.textContent=lab;b.dataset.m=m;
+    b.addEventListener("click",()=>setMode(m)); mt.appendChild(b);
+  });
+  updateModeUI();
+}
+function updateModeUI(){
+  document.querySelectorAll("#modeToggle button").forEach(b=>b.classList.toggle("active",b.dataset.m===P.mode));
+  document.getElementById("corrSection").style.display = P.mode==="spiky"?"":"none";
+  document.getElementById("phaseSection").style.display= P.mode==="sine" ?"":"none";
+}
+function setMode(m){ P.mode=m; updateModeUI(); simulate(); }
+
+function syncNLabel(){document.getElementById("nlabel").textContent="N = "+fmtN(P.N);}
+
+//============================================================================
+// Boot
+//============================================================================
+buildUI();
+simulate();
+let rraf=null;
+window.addEventListener("resize",()=>{if(!VIEW||rraf)return;rraf=requestAnimationFrame(()=>{rraf=null;render();});});
+</script>
+</body>
+</html>
