@@ -22,6 +22,7 @@
     --text:#1f2328; --dim:#6e6e63; --faint:#9c9c8d;
     --accent:#2b6cb0; --accent-deep:#1d4f85; --accent-soft:#8aa9c8;
     --green:#4f7a3f; --amber:#97650a; --red:#b23a2a; --purple:#6d57a0; --grey:#a3a094;
+    --heat-hot:#ef3f2c;  /* bright red for the peak end of the heat ramp */
     --mono:ui-monospace,"SF Mono",SFMono-Regular,"JetBrains Mono",Menlo,Consolas,monospace;
   }
   *{box-sizing:border-box}
@@ -74,6 +75,8 @@
   .panel .sub b{color:var(--text);font-weight:600}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
   canvas{width:100%;display:block}
+  .panel.grow{display:flex;flex-direction:column}
+  .panel.grow canvas{flex:1 1 auto;min-height:190px}
   .legend{display:flex;flex-wrap:wrap;gap:7px 14px;font-size:10.3px;color:var(--dim);margin-top:8px}
   .legend b{font-weight:400}
   code{background:var(--bg2);padding:1px 4px;border:1px solid var(--line);font-size:10.5px}
@@ -121,19 +124,17 @@
   .modal-body code{background:var(--bg2);border:1px solid var(--line);padding:0 3px;color:var(--text)}
   .modal-body b{color:var(--text)}
 
-  /* ---- ascii sparkline grid ---- */
+  /* ---- workload sparkline grid (mini line charts) ---- */
   #grid{display:grid;gap:7px;height:210px;overflow-y:auto;align-content:start;
     padding-right:2px}
   .sptile{display:flex;align-items:center;gap:7px;overflow:hidden;white-space:nowrap;
     background:var(--bg2);border:1px solid var(--line);padding:3px 7px}
   .sptile .lab{color:var(--faint);font-size:10.5px;flex:0 0 auto;font-variant-numeric:tabular-nums}
   .sptile .sz{color:var(--amber);font-size:10px;flex:0 0 auto;font-variant-numeric:tabular-nums}
-  .sptile .sp{font-size:12px;line-height:1;letter-spacing:0;overflow:hidden;flex:1 1 auto}
-  .sptile.more{color:var(--dim);font-size:10.5px;justify-content:center;background:transparent;
-    border-style:dashed}
-  .sp i{font-style:normal}
-  .sp .b0{color:var(--faint)} .sp .b1{color:var(--accent-soft)} .sp .b2{color:var(--accent)}
-  .sp .b3{color:var(--accent-deep)} .sp .b4{color:var(--red)}
+  canvas.sp{display:block;width:100%;height:var(--tileH,22px);flex:1 1 auto}
+  #grid.dense .sptile{padding:3px 2px;gap:0}
+  .sptile.more{grid-column:1/-1;color:var(--dim);font-size:10.5px;justify-content:center;
+    background:transparent;border-style:dashed}
 
   /* ---- status line (tmux-style) ---- */
   .status{position:fixed;left:0;right:0;bottom:0;display:flex;flex-wrap:wrap;gap:0 20px;
@@ -191,24 +192,21 @@
     <div class="panel">
       <div class="ptitle">individual workloads</div>
       <p class="sub">Each row is one workload (first <b id="nshow"></b> of <b id="ntot"></b>), drawn as a
-      block sparkline over one day. Shared scale <span id="capy"></span>; taller block = more demand.
+      line chart over one day. Shared scale <span id="capy"></span>; taller line = more demand.
       These series sum into the aggregate below.</p>
       <div id="grid"></div>
       <div class="legend">
-        <span><span class="sp"><i class="b0">▁</i></span> low</span>
-        <span><span class="sp"><i class="b2">▄</i></span> ~mean (1×)</span>
-        <span><span class="sp"><i class="b3">▇</i></span> high</span>
-        <span><span class="sp"><i class="b4">█</i></span> peak (≥ cap)</span>
+        <span><b style="color:var(--accent)">─</b><b style="color:var(--amber)">─</b><b style="color:var(--heat-hot)">─</b> heat: blue (low) → red (peak), shared 0–cap× scale</span>
       </div>
     </div>
 
     <div class="row2">
-      <div class="panel">
+      <div class="panel grow">
         <div class="ptitle">aggregate D(t) — one day</div>
         <p class="sub">Total demand summed across all workloads at fleet size <b id="nlabel"></b>.</p>
-        <canvas id="timeline" data-h="190"></canvas>
+        <canvas id="timeline" data-h="fill"></canvas>
         <div class="legend">
-          <span><b style="color:var(--accent)">───</b> actual demand D(t)</span>
+          <span><b style="color:var(--accent)">─</b><b style="color:var(--amber)">─</b><b style="color:var(--heat-hot)">─</b> demand D(t) — blue (low) → red (peak)</span>
         </div>
       </div>
 
@@ -345,7 +343,7 @@ const MONO = 'ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace';
 const P = {
   rho:0.0, spikiness:0.7,// correlation, tail heaviness
   sizeskew:0.70,         // 0 = equal-sized workloads, 1 = a few elephants dominate
-  N:256, seed:7,
+  N:15, seed:7,
 };
 
 const SLIDERS = {
@@ -490,15 +488,26 @@ function derive(){
 //============================================================================
 function setup(cv){
   const dpr=window.devicePixelRatio||1;
-  const h=+cv.dataset.h;
+  const fill=cv.dataset.h==="fill";          // flex-driven height: fill the panel
   const w=cv.clientWidth||cv.parentElement.clientWidth;
-  cv.style.height=h+"px";
+  const h=fill?(cv.clientHeight||190):+cv.dataset.h;
+  if(!fill)cv.style.height=h+"px";
   cv.width=Math.max(1,Math.round(w*dpr)); cv.height=Math.round(h*dpr);
   const ctx=cv.getContext("2d");
   ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
   return {ctx,w,h};
 }
 const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+// vertical "heat" ramp: red at the hot (peak) pixel, blue at the cold (valley) pixel
+function heatGrad(ctx,yHot,yCold){
+  const g=ctx.createLinearGradient(0,yHot,0,yCold);
+  const hot=css("--heat-hot"),cold=css("--accent");
+  // hold red up top, blue down low, snap through a thin amber pivot in the middle
+  g.addColorStop(0,hot);g.addColorStop(.44,hot);
+  g.addColorStop(.5,css("--amber"));
+  g.addColorStop(.56,cold);g.addColorStop(1,cold);
+  return g;
+}
 function gridY(ctx,x0,x1,y,label,col){
   ctx.strokeStyle=css("--line");ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x0,y);ctx.lineTo(x1,y);ctx.stroke();
   if(label){ctx.fillStyle=col||css("--dim");ctx.font="10px "+MONO;
@@ -506,39 +515,52 @@ function gridY(ctx,x0,x1,y,label,col){
 }
 
 //============================================================================
-// ASCII block-sparkline grid (replaces the old canvas grid)
+// Workload sparkline grid (mini canvas line charts, styled like the aggregate)
 //============================================================================
-const BLK=[" ","▁","▂","▃","▄","▅","▆","▇","█"];
-const GAP=10;
-let _mc=null;
-function charW(){
-  if(!_mc)_mc=document.createElement("canvas").getContext("2d");
-  _mc.font="12px "+MONO;
-  return _mc.measureText("0000000000").width/10;
+function miniLine(cv,series,i,cap,scale){
+  const dpr=window.devicePixelRatio||1;
+  const w=cv.clientWidth||1, h=cv.clientHeight||1;
+  cv.width=Math.max(1,Math.round(w*dpr)); cv.height=Math.max(1,Math.round(h*dpr));
+  const ctx=cv.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
+  const base=i*T, pad=1.5;
+  const X=t=>w*t/(T-1);
+  const Y=v=>{const f=Math.min(Math.max(v,0),cap)/cap; return h-pad-(h-2*pad)*f;};
+  const heat=heatGrad(ctx,pad,h-pad);   // shared 0–cap scale → consistent heat across tiles
+  // area fill under the curve
+  ctx.beginPath();
+  for(let t=0;t<T;t++){const x=X(t),y=Y(series[base+t]*scale);t?ctx.lineTo(x,y):ctx.moveTo(x,y);}
+  ctx.lineTo(X(T-1),h);ctx.lineTo(X(0),h);ctx.closePath();
+  ctx.fillStyle=heat;ctx.globalAlpha=.12;ctx.fill();ctx.globalAlpha=1;
+  // demand line, colored by height (peaks red, valleys blue)
+  ctx.strokeStyle=heat;ctx.lineWidth=h<16?1:1.3;ctx.beginPath();
+  for(let t=0;t<T;t++){const x=X(t),y=Y(series[base+t]*scale);t?ctx.lineTo(x,y):ctx.moveTo(x,y);}ctx.stroke();
 }
-function blkLevel(v,cap){const l=Math.round(v/cap*8);return l<0?0:l>8?8:l;}
-function blkClass(l){return l<=1?0:l<=3?1:l<=5?2:l<=7?3:4;}
-function sparkline(series,i,COLS,cap,scale){
-  const base=i*T, bw=T/COLS;
-  let out="",curCls=-1,run="";
-  for(let c=0;c<COLS;c++){
-    const t0=Math.floor(c*bw), t1=Math.max(t0+1,Math.floor((c+1)*bw));
-    let s=0,cnt=0; for(let t=t0;t<t1&&t<T;t++){s+=series[base+t];cnt++;}
-    const v=(cnt?s/cnt:0)*scale, l=blkLevel(v,cap), cls=blkClass(l);
-    if(cls!==curCls){if(run)out+=`<i class="b${curCls}">${run}</i>`;run="";curCls=cls;}
-    run+=BLK[l];
-  }
-  if(run)out+=`<i class="b${curCls}">${run}</i>`;
-  return out;
-}
+const MAX_SHOWN=162;   // how many sparklines we'll pack in before collapsing to "…more"
+let _gridSig=null,_simRef=null;  // skip the costly canvas rebuild when the visible grid is unchanged
 function drawIndividuals(){
   const host=document.getElementById("grid"), N=P.N, {series,sizes,sized}=SIM;
-  const CAP=24, ell=N>CAP, shown=ell?CAP-1:N;
+  const shown=Math.min(N,MAX_SHOWN,N_SAMPLE), ell=N>shown;
   const W=host.clientWidth||host.parentElement.clientWidth;
-  const cw=charW();
-  const cols=Math.max(1,Math.min(6,Math.floor(W/210)));
-  const tileW=(W-(cols-1)*GAP)/cols;
-  const COLS=Math.max(12,Math.min(72,Math.floor((tileW-4*cw-22)/cw)));
+
+  // tile size stays FIXED; as the fleet grows we only narrow the tiles (more columns),
+  // so the line shape never gets squashed. The panel height is fixed (CSS) — it scrolls
+  // rather than growing, so the charts never get smaller as it fills up.
+  const f=Math.max(0,Math.min(1,(shown-12)/(MAX_SHOWN-12)));
+  const tileH=22, gap=4, dense=shown>40;
+  const cellW=Math.round(220-(220-46)*f);
+  const cols=Math.max(1,Math.min(24,Math.floor((W+gap)/(cellW+gap))));
+
+  // ntot / "+N more" track N every frame; the rest only changes when the sig below does
+  document.getElementById("ntot").textContent=N.toLocaleString();
+  const moreTxt=`+ ${(N-shown).toLocaleString()} more workloads …`;
+
+  // past the cap, dragging the fleet slider leaves the grid identical — don't redraw 162 canvases
+  const sig=`${shown}|${cols}|${gap}|${W}`;
+  if(sig===_gridSig && SIM===_simRef){
+    const mt=document.getElementById("moretile"); if(mt)mt.textContent=moreTxt;
+    return;
+  }
+  _gridSig=sig; _simRef=SIM;
 
   const samp=[];
   for(let i=0;i<shown;i++)for(let t=0;t<T;t+=3)samp.push(series[i*T+t]*sizes[i]);
@@ -547,15 +569,19 @@ function drawIndividuals(){
 
   let html="";
   for(let i=0;i<shown;i++){
-    const sz = sized ? `<span class="sz">×${sizes[i]<9.95?sizes[i].toFixed(1):Math.round(sizes[i])}</span>` : "";
-    html+=`<div class="sptile"><span class="lab">w${String(i).padStart(2,"0")}</span><span class="sp">${sparkline(series,i,COLS,capY,sizes[i])}</span>${sz}</div>`;
+    const lab = dense ? "" : `<span class="lab">w${String(i).padStart(2,"0")}</span>`;
+    const sz = (!dense && sized) ? `<span class="sz">×${sizes[i]<9.95?sizes[i].toFixed(1):Math.round(sizes[i])}</span>` : "";
+    html+=`<div class="sptile">${lab}<canvas class="sp" data-i="${i}"></canvas>${sz}</div>`;
   }
-  if(ell)html+=`<div class="sptile more">+ ${(N-shown).toLocaleString()} more workloads …</div>`;
+  if(ell)html+=`<div class="sptile more" id="moretile">${moreTxt}</div>`;
+  host.classList.toggle("dense",dense);
+  host.style.setProperty("--tileH",tileH+"px");
+  host.style.gap=gap+"px";
   host.style.gridTemplateColumns=`repeat(${cols},1fr)`;
   host.innerHTML=html;
+  host.querySelectorAll("canvas.sp").forEach(cv=>{const i=+cv.dataset.i;miniLine(cv,series,i,capY,sizes[i]);});
 
   document.getElementById("nshow").textContent=shown.toLocaleString();
-  document.getElementById("ntot").textContent=N.toLocaleString();
   document.getElementById("capy").textContent="0–"+capY.toFixed(1)+"×";
 }
 
@@ -566,18 +592,21 @@ function drawTimeline(){
   const cv=document.getElementById("timeline"); const {ctx,w,h}=setup(cv);
   const padL=54,padR=14,padT=12,padB=24, x0=padL,x1=w-padR,y0=padT,y1=h-padB;
   const {D:agg}=VIEW;
-  let dmax=0; for(let t=0;t<T;t++) if(agg[t]>dmax)dmax=agg[t];
+  let dmax=0,dmin=Infinity; for(let t=0;t<T;t++){if(agg[t]>dmax)dmax=agg[t];if(agg[t]<dmin)dmin=agg[t];}
+  if(!isFinite(dmin))dmin=0;
   let ymax=(dmax*1.1)||1;
   const X=t=>x0+(x1-x0)*t/(T-1), Y=v=>y1-(y1-y0)*v/ymax;
   const fmtAx=v=>v>=1e6?(v/1e6).toFixed(1)+"M":v>=1e3?(v/1e3).toFixed(0)+"K":Math.round(v).toString();
   for(let g=0;g<=4;g++){const v=ymax*g/4; gridY(ctx,x0,x1,Y(v),fmtAx(v));}
+  // heat ramp spread across the actual demand range (peaks red, valleys blue)
+  const heat=heatGrad(ctx,Y(dmax),Y(dmin>dmax-1e-9?0:dmin));
   // area fill under the curve
   ctx.beginPath();
   for(let t=0;t<T;t++){const x=X(t),y=Y(agg[t]);t?ctx.lineTo(x,y):ctx.moveTo(x,y);}
   ctx.lineTo(X(T-1),y1);ctx.lineTo(X(0),y1);ctx.closePath();
-  ctx.fillStyle=css("--accent");ctx.globalAlpha=.07;ctx.fill();ctx.globalAlpha=1;
-  // demand line
-  ctx.strokeStyle=css("--accent");ctx.lineWidth=1.8;ctx.beginPath();
+  ctx.fillStyle=heat;ctx.globalAlpha=.1;ctx.fill();ctx.globalAlpha=1;
+  // demand line, colored by height
+  ctx.strokeStyle=heat;ctx.lineWidth=1.8;ctx.beginPath();
   for(let t=0;t<T;t++){const x=X(t),y=Y(agg[t]);t?ctx.lineTo(x,y):ctx.moveTo(x,y);}ctx.stroke();
   // x labels (hours)
   ctx.fillStyle=css("--dim");ctx.font="10px "+MONO;ctx.textAlign="center";
