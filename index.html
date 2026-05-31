@@ -18,7 +18,7 @@
 <meta name="twitter:image" content="https://agavra.github.io/heat-sandbox/og.png" />
 <style>
   :root{
-    --bg:#f8f8f4; --bg2:#efefe7; --panel:#fcfcf7; --line:#e0e0d4; --line2:#cacaba;
+    --bg:#FAFAFA; --bg2:#efefe7; --panel:#FAFAFA; --line:#e0e0d4; --line2:#cacaba;
     --text:#1f2328; --dim:#6e6e63; --faint:#9c9c8d;
     --accent:#2b6cb0; --accent-deep:#1d4f85; --accent-soft:#8aa9c8;
     --green:#4f7a3f; --amber:#97650a; --red:#b23a2a; --purple:#6d57a0; --grey:#a3a094;
@@ -210,12 +210,10 @@
         </div>
       </div>
 
-      <div class="panel">
+      <div class="panel grow">
         <div class="ptitle">peak / mean vs. fleet size</div>
-        <p class="sub">How burstiness changes as workloads stack, out to 100M. Solid = simulated;
-        dashed = extrapolated model. The true asymptotic floor is <b>correlated load</b>; the
-        <b>indivisible estimate</b> shows finite-size pressure from the largest workload's share.</p>
-        <canvas id="amort" data-h="190"></canvas>
+        <p class="sub">How burstiness changes as workloads stack, out to 100M.</p>
+        <canvas id="amort" data-h="fill"></canvas>
         <div class="legend">
           <span><b style="color:var(--accent)">───</b> simulated</span>
           <span><b style="color:var(--purple)">╌╌</b> fitted → 100M</span>
@@ -428,10 +426,36 @@ function simulate(){
   const gscale = sized ? wMax/Math.pow(N_SAMPLE,invA) : 1;
 
   const checks=[]; for(let k=1;k<=N_SAMPLE;k=Math.max(k+1,Math.round(k*1.6))) checks.push(Math.min(k,N_SAMPLE));
-  const aggC=new Float64Array(T); let ci=0; const meas=[];
-  for(let i=0;i<N_SAMPLE;i++){
-    const w=sizes[i]; for(let t=0;t<T;t++)aggC[t]+=w*series[i*T+t];
-    if(i+1===checks[ci]){let m=0,pk=0;for(let t=0;t<T;t++){m+=aggC[t];if(aggC[t]>pk)pk=aggC[t];}m/=T;meas.push([i+1,pk/m]);ci++;}
+  // Measured peak/mean at growing fleet sizes. Without skew, one cumulative pass
+  // (all weights equal) is already smooth. WITH skew the aggregate is dominated
+  // by the single largest workload, so any single insertion order gives a wildly
+  // non-monotone, whale-dependent curve. We instead draw many fresh fleets (new
+  // sizes each rep, reusing the shape bank) and take the MEDIAN peak/mean — the
+  // *typical* fleet — because the mean is tail-dominated under infinite variance
+  // (αₛ<2). A monotone clamp removes residual sampling wiggle.
+  const aggC=new Float64Array(T); let meas;
+  if(!sized){
+    let ci=0; meas=[];
+    for(let i=0;i<N_SAMPLE;i++){
+      for(let t=0;t<T;t++)aggC[t]+=series[i*T+t];
+      if(i+1===checks[ci]){let m=0,pk=0;for(let t=0;t<T;t++){m+=aggC[t];if(aggC[t]>pk)pk=aggC[t];}m/=T;meas.push([i+1,m>0?pk/m:1]);ci++;}
+    }
+  } else {
+    const REPS=32, samp=checks.map(()=>[]);
+    const order=new Int32Array(N_SAMPLE); for(let i=0;i<N_SAMPLE;i++)order[i]=i;
+    const w2=new Float64Array(N_SAMPLE);
+    for(let r=0;r<REPS;r++){
+      for(let i=0;i<N_SAMPLE;i++)w2[i]=pareto(rng,aS,xmS);                          // fresh fleet sizes
+      for(let i=N_SAMPLE-1;i>0;i--){const j=(rng()*(i+1))|0;const tmp=order[i];order[i]=order[j];order[j]=tmp;}
+      aggC.fill(0); let ci=0;
+      for(let j=0;j<N_SAMPLE;j++){
+        const i=order[j],w=w2[i],b=i*T; for(let t=0;t<T;t++)aggC[t]+=w*series[b+t];
+        if(j+1===checks[ci]){let m=0,pk=0;for(let t=0;t<T;t++){m+=aggC[t];if(aggC[t]>pk)pk=aggC[t];}m/=T;samp[ci].push(m>0?pk/m:1);ci++;}
+      }
+    }
+    const median=a=>{const s=a.slice().sort((x,y)=>x-y),q=s.length;return q%2?s[(q-1)/2]:(s[q/2-1]+s[q/2])/2;};
+    meas=checks.map((nn,k)=>[nn,median(samp[k])]);
+    for(let k=1;k<meas.length;k++) if(meas[k][1]>meas[k-1][1]) meas[k][1]=meas[k-1][1];  // monotone clamp
   }
   let sx=0,sy=0,sxx=0,sxy=0,n=0;
   for(const [N,pm] of meas){const ex=pm-corrFloor; if(N>=8 && ex>1e-3){const x=Math.log(N),y=Math.log(ex);sx+=x;sy+=y;sxx+=x*x;sxy+=x*y;n++;}}
@@ -448,6 +472,13 @@ function topShare(N){N=Math.max(1,N);
 // finite-size estimate from one indivisible workload that can't be split
 function indivEstimate(N){return 1 + topShare(N)*(SIM.avgBurst-1);}
 function curvePM(N){return Math.max(SIM.floorPM + SIM.C*Math.pow(Math.max(1,N),-SIM.p), indivEstimate(N));}
+// smoothed simulated peak/mean at fleet size N (log-linear interp over the
+// measured points) so the current-N marker rides the simulated curve instead
+// of a single noisy realization.
+function simPM(N){const m=SIM.meas; if(N<=m[0][0])return m[0][1];
+  for(let k=1;k<m.length;k++){if(N<=m[k][0]){const n0=m[k-1][0],v0=m[k-1][1],n1=m[k][0],v1=m[k][1];
+    return v0+(v1-v0)*(Math.log(N)-Math.log(n0))/(Math.log(n1)-Math.log(n0));}}
+  return m[m.length-1][1];}
 function peakMean(series){
   let m=0,pk=0;
   for(let t=0;t<T;t++){m+=series[t];if(series[t]>pk)pk=series[t];}
@@ -479,7 +510,7 @@ function derive(){
     currentTopShare=topShare(N);
   }
   VIEW={D, floor:floorPM, N, curve:SIM.meas, fitC:SIM.C, fitP:SIM.p,
-    pm:N<=N_SAMPLE ? peakMean(D) : curvePM(N), topShare:currentTopShare};
+    pm:N<=N_SAMPLE ? simPM(N) : curvePM(N), topShare:currentTopShare};
   render();
 }
 
