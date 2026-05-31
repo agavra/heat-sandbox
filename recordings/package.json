@@ -1,0 +1,13 @@
+{
+  "name": "heat-sandbox-recordings",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Headless-Chrome GIF recorder for the heat-sandbox visualizations",
+  "scripts": {
+    "record": "node record.js",
+    "all": "node record.js all"
+  },
+  "dependencies": {
+    "puppeteer-core": "^25.1.0"
+  }
+}
