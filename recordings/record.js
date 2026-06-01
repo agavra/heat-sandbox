@@ -59,7 +59,7 @@ const RECIPES = {
   'corr-sweep': {
     base: { rho: 0, spikiness: 0.44, sizeskew: 0, seed: 7, N: 2000 },
     sweep: { param: 'rho', from: 0, to: 0.5, frames: 80, scale: 'linear' },
-    fps: 10, panels: ['aggregate', 'peakmean'], fixedAxis: true, badge: null,
+    fps: 10, panels: ['aggregate', 'peakmean'], fixedAxis: true, badge: 'rho',
   },
   // Fixed N=2000, sweep size-skew 0 -> 100% (eased). A few elephants dominate.
   // seed 30 chosen so the sampled day's peak/mean ~= the typical fleet (panels agree).
